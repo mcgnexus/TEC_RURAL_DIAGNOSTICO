@@ -1,0 +1,44 @@
+# Ambiente
+.env
+.env.local
+.env.*.local
+
+# Dependencias
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnp.cjs
+.pnp.loader.mjs
+
+# Build
+dist/
+build/
+out/
+.next/
+.vercel/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.sln
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+
+# Herramientas de desarrollo
+.cache/
+.eslintcache
+.turbo/
+.nx/

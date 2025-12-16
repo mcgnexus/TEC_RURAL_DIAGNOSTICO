@@ -280,15 +280,32 @@ async function handleImageInput(message, phone, userId, profile) {
     return;
   }
 
+  // Log completo del mensaje para debugging
+  console.log('[whatsapp-webhook] Mensaje completo recibido:', JSON.stringify(message, null, 2));
+
   const imageData = message.image;
 
-  if (!imageData?.link) {
+  if (!imageData) {
+    console.error('[whatsapp-webhook] No hay objeto image en el mensaje');
     await sendWhatsAppError(phone, 'No se pudo obtener la imagen. Intenta nuevamente.');
     return;
   }
 
+  console.log('[whatsapp-webhook] imageData:', JSON.stringify(imageData, null, 2));
+
+  // Intentar diferentes campos donde podría estar la URL
+  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
+
+  if (!imageUrl) {
+    console.error('[whatsapp-webhook] No se encontró URL de imagen. Campos disponibles:', Object.keys(imageData));
+    await sendWhatsAppError(phone, 'No se pudo obtener la URL de la imagen. Intenta nuevamente.');
+    return;
+  }
+
+  console.log('[whatsapp-webhook] URL de imagen encontrada:', imageUrl);
+
   try {
-    console.log(`[whatsapp-webhook] Procesando imagen: ${imageData.link}`);
+    console.log(`[whatsapp-webhook] Procesando imagen: ${imageUrl}`);
 
     // Verificar créditos nuevamente antes de procesar
     if (profile && profile.credits_remaining <= 0) {
@@ -309,8 +326,10 @@ async function handleImageInput(message, phone, userId, profile) {
     });
 
     // Descargar imagen
-    const imageBuffer = await downloadWhatsAppMedia(imageData.link);
-    const mimeType = imageData.mime_type || 'image/jpeg';
+    console.log('[whatsapp-webhook] Intentando descargar imagen desde:', imageUrl);
+    const imageBuffer = await downloadWhatsAppMedia(imageUrl);
+    const mimeType = imageData.mime_type || imageData.mimetype || 'image/jpeg';
+    console.log('[whatsapp-webhook] Imagen descargada exitosamente:', imageBuffer.length, 'bytes');
 
     console.log(`[whatsapp-webhook] Imagen descargada: ${imageBuffer.length} bytes, tipo: ${mimeType}`);
 

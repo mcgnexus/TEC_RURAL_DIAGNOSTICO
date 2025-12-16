@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const createSupabaseAuthClient = () => {
   const cookieStore = cookies();

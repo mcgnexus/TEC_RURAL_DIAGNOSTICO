@@ -1,27 +1,10 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import crypto from 'crypto';
 import { runDiagnosis } from '@/lib/diagnosisEngine';
+import { sendWhatsAppText, sendWhatsAppImage } from '@/lib/whapi';
 
 export const runtime = 'nodejs';
-
-const isDebugEnabled = () =>
-  process.env.DIAGNOSE_DEBUG === '1' || process.env.NEXT_PUBLIC_DIAGNOSE_DEBUG === '1';
-
-export async function GET() {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: 'Method Not Allowed',
-      message:
-        'Este endpoint solo acepta POST (multipart/form-data). Abre la UI de /dashboard/nueva-consulta o envía un POST con cultivoName, notes (opcional) e image.',
-      requiredFields: ['cultivoName', 'image'],
-      optionalFields: ['notes', 'gpsLat', 'gpsLong'],
-    },
-    { status: 405 }
-  );
-}
 
 const createSupabaseAuthClient = () => {
   const cookieStore = cookies();
@@ -48,9 +31,6 @@ const createSupabaseAuthClient = () => {
 };
 
 export async function POST(request) {
-  const requestId = crypto.randomUUID();
-  const startedAt = Date.now();
-
   try {
     const supabaseAuth = createSupabaseAuthClient();
     const formData = await request.formData();
@@ -62,17 +42,11 @@ export async function POST(request) {
     const image = formData.get('image');
 
     if (!cultivoName) {
-      return NextResponse.json(
-        { error: 'El nombre del cultivo es obligatorio.', requestId },
-        { status: 400, headers: { 'x-diagnose-request-id': requestId } }
-      );
+      return NextResponse.json({ error: 'El nombre del cultivo es obligatorio.' }, { status: 400 });
     }
 
     if (!image || typeof image === 'string') {
-      return NextResponse.json(
-        { error: 'Se requiere una imagen para el diagnóstico.', requestId },
-        { status: 400, headers: { 'x-diagnose-request-id': requestId } }
-      );
+      return NextResponse.json({ error: 'Se requiere una imagen para el diagnóstico.' }, { status: 400 });
     }
 
     const {
@@ -81,27 +55,11 @@ export async function POST(request) {
     } = await supabaseAuth.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: 'No autorizado.', requestId },
-        { status: 401, headers: { 'x-diagnose-request-id': requestId } }
-      );
+      return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
     }
 
     const imageBuffer = Buffer.from(await image.arrayBuffer());
     const mimeType = image.type || 'image/jpeg';
-
-    if (isDebugEnabled()) {
-      console.log('[diagnose] request', {
-        requestId,
-        userId: user.id,
-        cultivoName,
-        notesChars: notes.length,
-        mimeType,
-        imageBytes: imageBuffer.length,
-        gpsLat: gpsLat ? String(gpsLat) : null,
-        gpsLong: gpsLong ? String(gpsLong) : null,
-      });
-    }
 
     const diagnosisResult = await runDiagnosis({
       userId: user.id,
@@ -118,57 +76,74 @@ export async function POST(request) {
       return NextResponse.json(
         {
           needsBetterPhoto: true,
-          requestId,
           message:
             diagnosisResult.message ||
             'La imagen no fue concluyente. Por favor toma otra foto más clara.',
         },
-        { status: 200, headers: { 'x-diagnose-request-id': requestId } }
+        { status: 200 }
       );
     }
 
     if (diagnosisResult.error) {
-      if (isDebugEnabled()) {
-        console.error('[diagnose] runDiagnosis error', {
-          requestId,
-          statusCode: diagnosisResult.statusCode || 400,
-          error: diagnosisResult.error,
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
-
       return NextResponse.json(
-        { error: diagnosisResult.error, requestId },
-        { status: diagnosisResult.statusCode || 400, headers: { 'x-diagnose-request-id': requestId } }
+        { error: diagnosisResult.error },
+        { status: diagnosisResult.statusCode || 400 }
       );
     }
 
-    if (isDebugEnabled()) {
-      console.log('[diagnose] success', { requestId, elapsedMs: Date.now() - startedAt });
+    // NOTIFICACIÓN AUTOMÁTICA POR WHATSAPP (no bloqueante)
+    if (diagnosisResult.diagnosis) {
+      // Ejecutar notificación de forma asíncrona sin bloquear la respuesta
+      (async () => {
+        try {
+          // Obtener teléfono del usuario
+          const { data: profile } = await supabaseAuth
+            .from('profiles')
+            .select('phone')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profile?.phone) {
+            const diagnosis = diagnosisResult.diagnosis;
+            const confidence = diagnosis.confidence_score
+              ? Math.round(diagnosis.confidence_score * 100)
+              : 0;
+
+            const notificationText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
+
+            // Enviar notificación de texto
+            await sendWhatsAppText({
+              to: profile.phone,
+              text: notificationText,
+            });
+
+            // Opcionalmente enviar imagen
+            if (diagnosis.image_url) {
+              await sendWhatsAppImage({
+                to: profile.phone,
+                imageUrl: diagnosis.image_url,
+                caption: `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
+              });
+            }
+
+            console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone);
+          }
+        } catch (notifError) {
+          // Log pero no fallar el diagnóstico
+          console.error('[diagnose] Error en notificación WhatsApp:', notifError);
+        }
+      })();
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        requestId,
-        diagnosis: diagnosisResult.diagnosis,
-        remainingCredits: diagnosisResult.remainingCredits,
-        recommendations: diagnosisResult.recommendations || [],
-        ragUsage: diagnosisResult.ragUsage || null,
-      },
-      { headers: { 'x-diagnose-request-id': requestId } }
-    );
-  } catch (error) {
-    console.error('[diagnose] API error', {
-      requestId,
-      message: error?.message,
-      stack: error?.stack,
-      elapsedMs: Date.now() - startedAt,
+    return NextResponse.json({
+      success: true,
+      diagnosis: diagnosisResult.diagnosis,
+      remainingCredits: diagnosisResult.remainingCredits,
+      recommendations: diagnosisResult.recommendations || [],
+      ragUsage: diagnosisResult.ragUsage || null,
     });
-
-    return NextResponse.json(
-      { error: error?.message || 'Error inesperado.', requestId },
-      { status: 500, headers: { 'x-diagnose-request-id': requestId } }
-    );
+  } catch (error) {
+    console.error('Diagnose API error:', error);
+    return NextResponse.json({ error: error.message || 'Error inesperado.' }, { status: 500 });
   }
 }

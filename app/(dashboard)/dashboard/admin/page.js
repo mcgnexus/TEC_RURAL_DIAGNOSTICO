@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useUserContext } from '@/components/UserContext';
 
 export default function AdminHome() {
@@ -35,7 +36,58 @@ export default function AdminHome() {
             Ajusta creditos y revisa la actividad de los productores registrados.
           </p>
         </a>
+
+        <GeminiHealthCard />
       </div>
+    </div>
+  );
+}
+
+function GeminiHealthCard() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const handleCheck = async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch('/api/health/gemini');
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) {
+        setError(body.error || 'No se pudo verificar la conexión con Gemini.');
+        return;
+      }
+      setResult(body);
+    } catch (err) {
+      setError('Error realizando la verificación. Intenta nuevamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="card" style={{ display: 'grid', gap: '0.65rem' }}>
+      <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)' }}>Salud del proveedor IA</p>
+      <h2 style={{ margin: '6px 0', fontSize: '1.25rem' }}>Probar conexión a Gemini</h2>
+      <p style={{ color: 'var(--color-muted)' }}>
+        Realiza una llamada de prueba al modelo para confirmar que la API responde.
+      </p>
+      {error && <div className="alert-banner alert-danger">{error}</div>}
+      {result && (
+        <div className="alert-banner alert-success">
+          Conexión OK · Modelo: {result.model} · Tiempo: {result.elapsedMs} ms
+        </div>
+      )}
+      <button
+        className="btn-secondary"
+        disabled={loading}
+        onClick={handleCheck}
+        style={{ justifySelf: 'start' }}
+      >
+        {loading ? 'Verificando…' : 'Probar ahora'}
+      </button>
     </div>
   );
 }

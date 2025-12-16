@@ -39,6 +39,9 @@ export default function NuevaConsultaPage() {
       streamRef.current = stream;
       setIsCameraActive(true);
     } catch (err) {
+      if (debug) {
+        console.error('[diagnose] request failed', err);
+      }
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -107,6 +110,10 @@ export default function NuevaConsultaPage() {
     setError('');
     setStatusMessage('');
 
+    const debug = process.env.NODE_ENV !== 'production';
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let groupStarted = false;
+
     if (!cultivoName.trim()) {
       setError('Por favor ingresa el nombre del cultivo.');
       return;
@@ -132,8 +139,29 @@ export default function NuevaConsultaPage() {
       if (capturedImage) {
         const blob = await (await fetch(capturedImage)).blob();
         formData.append('image', blob, 'captura.jpg');
+        if (debug) {
+          console.log('[diagnose] using captured image', { bytes: blob.size, type: blob.type });
+        }
       } else if (imageFile) {
         formData.append('image', imageFile, imageFile.name);
+        if (debug) {
+          console.log('[diagnose] using file image', {
+            name: imageFile.name,
+            bytes: imageFile.size,
+            type: imageFile.type,
+          });
+        }
+      }
+
+      if (debug) {
+        groupStarted = true;
+        console.groupCollapsed('[diagnose] submit');
+        console.log({
+          cultivoName: cultivoName.trim(),
+          notesChars: notes.trim().length,
+          gpsLat: gpsData.lat,
+          gpsLong: gpsData.long,
+        });
       }
 
       const response = await fetch('/api/diagnose', {
@@ -141,10 +169,28 @@ export default function NuevaConsultaPage() {
         body: formData,
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
+      const requestId =
+        response.headers.get('x-diagnose-request-id') || result.requestId || null;
+
+      if (debug) {
+        const elapsedMs =
+          (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+        console.log('[diagnose] response', {
+          status: response.status,
+          ok: response.ok,
+          requestId,
+          elapsedMs: Math.round(elapsedMs),
+        });
+        console.log('[diagnose] body', result);
+      }
 
       if (!response.ok) {
-        setError(result.error || 'Error procesando la consulta.');
+        if (response.status === 503 || response.status === 429) {
+          setError(result.error || 'El servicio de IA está temporalmente sobrecargado. Intenta nuevamente en unos minutos.');
+        } else {
+          setError(result.error || 'Error procesando la consulta.');
+        }
       } else if (result.needsBetterPhoto) {
         setError(result.message || 'La foto no fue clara, intenta nuevamente.');
       } else {
@@ -155,6 +201,9 @@ export default function NuevaConsultaPage() {
       setError('Ocurrió un problema al enviar la consulta. Intenta más tarde.');
     } finally {
       setIsSubmitting(false);
+      if (debug && groupStarted) {
+        console.groupEnd();
+      }
     }
   };
 

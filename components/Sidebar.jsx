@@ -9,6 +9,7 @@ const navItems = [
   { href: '/dashboard', label: 'Resumen' },
   { href: '/dashboard/nueva-consulta', label: 'Nueva consulta' },
   { href: '/dashboard/historial', label: 'Historial' },
+  { href: '/dashboard/configuracion', label: 'Configuración' },
 ];
 
 const adminItems = [

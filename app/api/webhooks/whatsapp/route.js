@@ -111,8 +111,125 @@ async function processIncomingMessage(message) {
     }
   }
 
-  // 3. GESTIÓN DE SESIONES CONVERSACIONALES
+  // 3. DIAGNÓSTICO RÁPIDO: Imagen con caption (texto adjunto)
+  if (type === 'image' && message.image?.caption) {
+    console.log('[whatsapp-webhook] Imagen con caption detectada, procesando diagnóstico rápido');
+    await handleQuickDiagnosis(message, phone, userId, profile);
+    return;
+  }
+
+  // 4. GESTIÓN DE SESIONES CONVERSACIONALES
   await handleConversationalFlow(message, phone, userId, profile);
+}
+
+/**
+ * Procesa un diagnóstico rápido desde imagen con caption
+ * Formato esperado: "cultivo - síntomas" o solo "cultivo"
+ */
+async function handleQuickDiagnosis(message, phone, userId, profile) {
+  const imageData = message.image;
+  const caption = imageData.caption?.trim() || '';
+
+  console.log('[whatsapp-webhook] Caption recibido:', caption);
+
+  // Verificar créditos
+  if (profile.credits_remaining <= 0) {
+    await sendWhatsAppError(
+      phone,
+      'No tienes créditos disponibles. Contacta al administrador para obtener más.'
+    );
+    return;
+  }
+
+  // Parsear caption para extraer cultivo y síntomas
+  // Formato: "cultivo - síntomas" o solo "cultivo"
+  let cultivoName = '';
+  let notes = '';
+
+  if (caption.includes('-')) {
+    const parts = caption.split('-').map(p => p.trim());
+    cultivoName = parts[0];
+    notes = parts.slice(1).join(' - '); // Por si hay múltiples '-'
+  } else {
+    cultivoName = caption;
+  }
+
+  // Validar que al menos tenga el cultivo
+  if (!cultivoName || cultivoName.length < 2) {
+    await sendWhatsAppText({
+      to: phone,
+      text: `Para hacer un diagnóstico rápido, envía una imagen con el nombre del cultivo en el texto.\n\n*Ejemplos:*\n• tomate\n• café - hojas amarillas\n• maíz - manchas en tallos\n\nO usa /nuevo para el flujo guiado paso a paso.`,
+    });
+    return;
+  }
+
+  console.log(`[whatsapp-webhook] Diagnóstico rápido - Cultivo: ${cultivoName}, Notas: ${notes || 'ninguna'}`);
+
+  // Obtener URL de la imagen
+  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
+
+  if (!imageUrl) {
+    console.error('[whatsapp-webhook] No se encontró URL de imagen');
+    await sendWhatsAppError(phone, 'No se pudo obtener la imagen. Intenta nuevamente.');
+    return;
+  }
+
+  try {
+    await sendWhatsAppText({
+      to: phone,
+      text: '⏳ Analizando tu imagen... Esto puede tomar unos segundos.',
+    });
+
+    // Descargar imagen
+    console.log('[whatsapp-webhook] Descargando imagen desde:', imageUrl);
+    const imageBuffer = await downloadWhatsAppMedia(imageUrl);
+    const mimeType = imageData.mime_type || imageData.mimetype || 'image/jpeg';
+
+    console.log(`[whatsapp-webhook] Imagen descargada: ${imageBuffer.length} bytes, tipo: ${mimeType}`);
+
+    // Ejecutar diagnóstico
+    const diagnosisResult = await runDiagnosis({
+      userId,
+      cultivoName,
+      notes,
+      imageBuffer,
+      mimeType,
+      source: 'whatsapp',
+    });
+
+    // Manejar resultado
+    if (diagnosisResult.needsBetterPhoto) {
+      await sendWhatsAppText({
+        to: phone,
+        text: `⚠️ ${diagnosisResult.message}\n\nPor favor envía otra foto más clara del cultivo.`,
+      });
+      return;
+    }
+
+    if (diagnosisResult.error) {
+      console.error('[whatsapp-webhook] Error en diagnóstico rápido:', diagnosisResult.error);
+      await sendWhatsAppError(phone, diagnosisResult.error);
+      return;
+    }
+
+    // ÉXITO: Enviar diagnóstico
+    const diagnosis = diagnosisResult.diagnosis;
+    const confidence = diagnosis.confidence_score
+      ? Math.round(diagnosis.confidence_score * 100)
+      : 0;
+
+    const resultText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
+
+    await sendWhatsAppText({ to: phone, text: resultText });
+
+    console.log(`[whatsapp-webhook] Diagnóstico rápido completado para ${phone}, ID: ${diagnosis.id}`);
+  } catch (error) {
+    console.error('[whatsapp-webhook] Error en diagnóstico rápido:', error);
+    await sendWhatsAppError(
+      phone,
+      'Ocurrió un error procesando tu imagen. Por favor intenta nuevamente más tarde.'
+    );
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabaseBrowser';
 import { useUserContext } from '@/components/UserContext';
 
@@ -10,10 +10,13 @@ export default function ConfiguracionPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const initializedRef = useRef(false);
 
+  // Solo sincronizar cuando el profile se carga inicialmente
   useEffect(() => {
-    if (profile?.notify_whatsapp_on_diagnosis !== undefined) {
+    if (!initializedRef.current && profile?.notify_whatsapp_on_diagnosis !== undefined) {
       setNotifyWhatsApp(profile.notify_whatsapp_on_diagnosis !== false);
+      initializedRef.current = true;
     }
   }, [profile]);
 

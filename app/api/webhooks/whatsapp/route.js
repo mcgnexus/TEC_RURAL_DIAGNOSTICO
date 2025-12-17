@@ -23,6 +23,36 @@ import { runDiagnosis } from '@/lib/diagnosisEngine';
 export const runtime = 'nodejs';
 
 /**
+ * Marca un mensaje como procesado para evitar duplicados
+ */
+async function markMessageAsProcessed(messageId, phone) {
+  if (!messageId) return;
+
+  try {
+    await supabaseAdmin
+      .from('processed_webhook_messages')
+      .insert({
+        message_id: messageId,
+        phone: phone || 'unknown',
+        processed_at: new Date().toISOString(),
+      })
+      .then(() => {
+        console.log(`[whatsapp-webhook] Mensaje ${messageId} marcado como procesado`);
+      })
+      .catch((err) => {
+        // Ignorar si ya existe (unique constraint)
+        if (err.code === '23505') {
+          console.log(`[whatsapp-webhook] Mensaje ${messageId} ya estaba marcado como procesado`);
+        } else {
+          console.error(`[whatsapp-webhook] Error marcando mensaje como procesado:`, err);
+        }
+      });
+  } catch (error) {
+    console.error('[whatsapp-webhook] Error en markMessageAsProcessed:', error);
+  }
+}
+
+/**
  * Endpoint para recibir webhooks de Whapi
  */
 export async function POST(request) {
@@ -63,63 +93,83 @@ export async function POST(request) {
  * Procesa un mensaje entrante individual
  */
 async function processIncomingMessage(message) {
-  const { chat_id, type } = message;
+  const { chat_id, type, id: messageId } = message;
   const phone = normalizePhoneFromChatId(chat_id);
 
-  if (!phone) {
-    console.warn('[whatsapp-webhook] No se pudo normalizar el teléfono:', chat_id);
-    return;
-  }
-
-  console.log(`[whatsapp-webhook] Procesando mensaje de ${phone}, tipo: ${type}`);
-
-  // 1. AUTENTICACIÓN: Verificar si el usuario está registrado
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .select('id, phone, credits_remaining')
-    .eq('phone', phone)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error('[whatsapp-webhook] Error consultando perfil:', profileError);
-    await sendWhatsAppError(
-      phone,
-      'Ocurrió un error al verificar tu cuenta. Por favor intenta más tarde.'
-    );
-    return;
-  }
-
-  if (!profile) {
-    console.log(`[whatsapp-webhook] Usuario no registrado: ${phone}`);
-    await sendWhatsAppText({
-      to: phone,
-      text: 'Tu número no está registrado en TEC Rural Diagnóstico.\n\nPor favor regístrate en la aplicación web primero:\nhttps://tec-rural-diagnostico.vercel.app',
-    });
-    return;
-  }
-
-  const userId = profile.id;
-  console.log(`[whatsapp-webhook] Usuario autenticado: ${userId}`);
-
-  // 2. DETECCIÓN DE COMANDOS
-  if (type === 'text') {
-    const command = detectCommand(message.text?.body || '');
-
-    if (command) {
-      await handleCommand(command, phone, userId, profile);
+  try {
+    if (!phone) {
+      console.warn('[whatsapp-webhook] No se pudo normalizar el teléfono:', chat_id);
       return;
     }
-  }
 
-  // 3. DIAGNÓSTICO RÁPIDO: Imagen con caption (texto adjunto)
-  if (type === 'image' && message.image?.caption) {
-    console.log('[whatsapp-webhook] Imagen con caption detectada, procesando diagnóstico rápido');
-    await handleQuickDiagnosis(message, phone, userId, profile);
-    return;
-  }
+    // DEDUPLICACIÓN: Verificar si el mensaje ya fue procesado
+    if (messageId) {
+      const { data: existing } = await supabaseAdmin
+        .from('processed_webhook_messages')
+        .select('id')
+        .eq('message_id', messageId)
+        .maybeSingle()
+        .catch(() => ({ data: null }));
 
-  // 4. GESTIÓN DE SESIONES CONVERSACIONALES
-  await handleConversationalFlow(message, phone, userId, profile);
+      if (existing) {
+        console.log(`[whatsapp-webhook] Mensaje ${messageId} ya fue procesado, omitiendo...`);
+        return;
+      }
+    }
+
+    console.log(`[whatsapp-webhook] Procesando mensaje de ${phone}, tipo: ${type}`);
+
+    // 1. AUTENTICACIÓN: Verificar si el usuario está registrado
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, phone, credits_remaining')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('[whatsapp-webhook] Error consultando perfil:', profileError);
+      await sendWhatsAppError(
+        phone,
+        'Ocurrió un error al verificar tu cuenta. Por favor intenta más tarde.'
+      );
+      return;
+    }
+
+    if (!profile) {
+      console.log(`[whatsapp-webhook] Usuario no registrado: ${phone}`);
+      await sendWhatsAppText({
+        to: phone,
+        text: 'Tu número no está registrado en TEC Rural Diagnóstico.\n\nPor favor regístrate en la aplicación web primero:\nhttps://tec-rural-diagnostico.vercel.app',
+      });
+      return;
+    }
+
+    const userId = profile.id;
+    console.log(`[whatsapp-webhook] Usuario autenticado: ${userId}`);
+
+    // 2. DETECCIÓN DE COMANDOS
+    if (type === 'text') {
+      const command = detectCommand(message.text?.body || '');
+
+      if (command) {
+        await handleCommand(command, phone, userId, profile);
+        return;
+      }
+    }
+
+    // 3. DIAGNÓSTICO RÁPIDO: Imagen con caption (texto adjunto)
+    if (type === 'image' && message.image?.caption) {
+      console.log('[whatsapp-webhook] Imagen con caption detectada, procesando diagnóstico rápido');
+      await handleQuickDiagnosis(message, phone, userId, profile);
+      return;
+    }
+
+    // 4. GESTIÓN DE SESIONES CONVERSACIONALES
+    await handleConversationalFlow(message, phone, userId, profile);
+  } finally {
+    // Siempre marcar el mensaje como procesado al final
+    await markMessageAsProcessed(messageId, phone);
+  }
 }
 
 /**

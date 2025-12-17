@@ -79,9 +79,19 @@ export default function NuevaConsultaPage() {
   };
 
   const handleFileInput = event => {
-    setCapturedImage(null);
-    setImageFile(event.target.files[0] || null);
-    setStatusMessage('');
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        setCapturedImage(e.target.result);
+        setImageFile(file);
+        setStatusMessage('Imagen cargada correctamente.');
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setCapturedImage(null);
+      setImageFile(null);
+    }
   };
 
   const activateGPS = () => {
@@ -273,9 +283,26 @@ export default function NuevaConsultaPage() {
               />
             </div>
             {imageFile && (
-              <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)', marginTop: '0.5rem' }}>
-                Imagen seleccionada: <strong>{imageFile.name}</strong>
-              </p>
+              <div style={{ marginTop: '1rem' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)', margin: '0 0 0.5rem 0' }}>
+                  📁 <strong>{imageFile.name}</strong> ({(imageFile.size / 1024).toFixed(2)} KB)
+                </p>
+                <div
+                  style={{
+                    borderRadius: '12px',
+                    border: '1px solid var(--color-border)',
+                    height: 150,
+                    overflow: 'hidden',
+                    background: '#f9fafb',
+                  }}
+                >
+                  <img
+                    src={capturedImage}
+                    alt="Vista previa"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+              </div>
             )}
           </div>
 

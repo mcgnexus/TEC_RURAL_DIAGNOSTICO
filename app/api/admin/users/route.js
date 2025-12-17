@@ -29,7 +29,7 @@ export async function GET() {
     const supabase = supabaseAdmin;
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id,email,first_name,last_name,phone,credits_remaining,role,created_at,updated_at')
+      .select('id,email,first_name,last_name,phone,credits_remaining,role,notify_whatsapp_on_diagnosis,created_at,updated_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -60,7 +60,7 @@ export async function PATCH(request) {
     }
 
     // Filtrar campos permitidos
-    const allowedFields = ['first_name', 'last_name', 'phone', 'role', 'credits_remaining', 'location'];
+    const allowedFields = ['first_name', 'last_name', 'phone', 'role', 'credits_remaining', 'location', 'notify_whatsapp_on_diagnosis'];
     const filteredUpdates = {};
     
     Object.keys(updates).forEach(key => {

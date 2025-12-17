@@ -50,6 +50,7 @@ export default function UsuariosAdminPage() {
       role: user.role || 'user',
       credits_remaining: user.credits_remaining ?? 0,
       location: user.location || '',
+      notify_whatsapp_on_diagnosis: user.notify_whatsapp_on_diagnosis !== false,
     });
   };
 
@@ -175,6 +176,17 @@ export default function UsuariosAdminPage() {
                     onChange={e => setEditForm({ ...editForm, credits_remaining: Number(e.target.value) })}
                   />
                 </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.notify_whatsapp_on_diagnosis !== false}
+                      onChange={e => setEditForm({ ...editForm, notify_whatsapp_on_diagnosis: e.target.checked })}
+                      style={{ width: '18px', height: '18px' }}
+                    />
+                    <span className="text-xs font-semibold text-gray-500">Permitir notificaciones en WhatsApp</span>
+                  </label>
+                </div>
                 <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                   <button onClick={cancelEditing} className="btn-secondary">Cancelar</button>
                   <button onClick={() => handleSave(user.id)} className="btn-primary">Guardar Cambios</button>
@@ -204,6 +216,13 @@ export default function UsuariosAdminPage() {
             </span>
           </td>
           <td style={{ textAlign: 'center', fontWeight: 600 }}>{user.credits_remaining}</td>
+          <td style={{ textAlign: 'center' }}>
+            {user.notify_whatsapp_on_diagnosis !== false ? (
+              <span style={{ color: '#10b981', fontWeight: 600 }}>✅ Habilitado</span>
+            ) : (
+              <span style={{ color: '#ef4444', fontWeight: 600 }}>❌ Deshabilitado</span>
+            )}
+          </td>
           <td style={{ textAlign: 'right' }}>
             <button
               onClick={() => startEditing(user)}
@@ -238,6 +257,7 @@ export default function UsuariosAdminPage() {
               <th>Ubicación</th>
               <th>Rol</th>
               <th style={{ textAlign: 'center' }}>Créditos</th>
+              <th>WhatsApp</th>
               <th style={{ textAlign: 'right' }}>Acciones</th>
             </tr>
           </thead>

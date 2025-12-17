@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import IconoTecRural from '@/components/IconoTecRural';
 
 export default function NuevaConsultaPage() {
   const router = useRouter();
@@ -224,7 +225,8 @@ export default function NuevaConsultaPage() {
       )}
 
       {statusMessage && (
-        <div className="alert-banner alert-success">
+        <div className="alert-banner alert-success" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <IconoTecRural size="sm" style={{ display: 'inline-block', flexShrink: 0 }} />
           {statusMessage}
         </div>
       )}
@@ -254,6 +256,35 @@ export default function NuevaConsultaPage() {
               style={{ resize: 'vertical' }}
             />
           </div>
+
+          <div>
+            <p style={{ fontWeight: 600, marginBottom: 6 }}>Sube una foto desde tu dispositivo</p>
+            <div className="file-input-wrapper" style={{ width: '100%' }}>
+              <button type="button" className="btn-secondary" style={{ width: '100%', textAlign: 'center' }}>
+                {imageFile ? 'Cambiar imagen' : 'Seleccionar imagen'}
+              </button>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileInput}
+                disabled={isSubmitting}
+                className="file-input-hidden"
+              />
+            </div>
+            {imageFile && (
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)', marginTop: '0.5rem' }}>
+                Imagen seleccionada: <strong>{imageFile.name}</strong>
+              </p>
+            )}
+          </div>
+
+          {gpsData.lat && gpsData.long && (
+            <div className="alert-banner alert-success" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <IconoTecRural size="sm" style={{ display: 'inline-block', flexShrink: 0 }} />
+              Ubicación registrada: {gpsData.lat.toFixed(5)}, {gpsData.long.toFixed(5)}
+            </div>
+          )}
         </div>
 
         <div className="card" style={{ display: 'grid', gap: '1.5rem' }}>
@@ -339,40 +370,12 @@ export default function NuevaConsultaPage() {
           <canvas ref={canvasRef} style={{ display: 'none' }} />
         </div>
 
-        <div className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <div>
-            <p style={{ fontWeight: 600, marginBottom: 6 }}>O sube una foto desde tu dispositivo</p>
-            <div className="file-input-wrapper" style={{ width: '100%' }}>
-              <button type="button" className="btn-secondary" style={{ width: '100%', textAlign: 'center' }}>
-                {imageFile ? 'Cambiar imagen' : 'Seleccionar imagen'}
-              </button>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileInput}
-                disabled={isSubmitting}
-                className="file-input-hidden"
-              />
-            </div>
-            {imageFile && (
-              <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)', marginTop: '0.5rem' }}>
-                Imagen seleccionada: <strong>{imageFile.name}</strong>
-              </p>
-            )}
-          </div>
-          {gpsData.lat && gpsData.long && (
-            <div className="alert-banner alert-success">
-              Ubicación registrada: {gpsData.lat.toFixed(5)}, {gpsData.long.toFixed(5)}
-            </div>
-          )}
-        </div>
-
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
           <button type="button" onClick={() => router.push('/dashboard')} className="btn-outline">
             Cancelar
           </button>
-          <button type="submit" disabled={isSubmitting} className="btn-gradient">
+          <button type="submit" disabled={isSubmitting} className="btn-gradient" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {isSubmitting && <IconoTecRural size="sm" style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }} />}
             {isSubmitting ? 'Enviando...' : 'Enviar consulta'}
           </button>
         </div>

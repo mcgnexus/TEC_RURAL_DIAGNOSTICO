@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseBrowser';
 import ReactMarkdown from 'react-markdown';
 import RagUsageIndicator from '@/components/RagUsageIndicator';
+import IconoTecRural from '@/components/IconoTecRural';
 
 export default function HistorialPage() {
   const [diagnoses, setDiagnoses] = useState([]);
@@ -15,6 +16,7 @@ export default function HistorialPage() {
   const [deleteError, setDeleteError] = useState('');
   const [confirmError, setConfirmError] = useState('');
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const formatStatus = diagnosis => {
     if (diagnosis?.is_confirmed) return 'Confirmado';
@@ -26,14 +28,39 @@ export default function HistorialPage() {
     return diagnosis?.status || 'Sin estado';
   };
 
-  const buildDiagnosisPreview = markdown => {
+  const extractDiseaseName = markdown => {
     if (!markdown) return 'Sin diagnóstico';
-    const cleaned = String(markdown)
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/[#*_`>\[\]()]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return cleaned.length > 90 ? `${cleaned.slice(0, 90)}…` : cleaned;
+
+    const text = String(markdown);
+
+    // Buscar título markdown (# Nombre de Enfermedad)
+    const headingMatch = text.match(/^#{1,3}\s*(.+?)(?:\n|$)/m);
+    if (headingMatch) {
+      return headingMatch[1].trim();
+    }
+
+    // Buscar patrón "Diagnóstico:" o "Enfermedad:" seguido del nombre
+    const diagnosticoMatch = text.match(/(?:diagnóstico|enfermedad|problema):\s*\*{0,2}(.+?)\*{0,2}(?:\n|\.)/i);
+    if (diagnosticoMatch) {
+      return diagnosticoMatch[1].trim();
+    }
+
+    // Buscar texto en negrita al inicio (**Nombre**)
+    const boldMatch = text.match(/^\*{2}(.+?)\*{2}/);
+    if (boldMatch) {
+      return boldMatch[1].trim();
+    }
+
+    // Tomar la primera línea no vacía
+    const firstLine = text.split('\n').find(line => line.trim().length > 0);
+    if (firstLine) {
+      const cleaned = firstLine
+        .replace(/[#*_`>]/g, '')
+        .trim();
+      return cleaned.length > 50 ? `${cleaned.slice(0, 50)}…` : cleaned;
+    }
+
+    return 'Sin diagnóstico';
   };
 
   useEffect(() => {
@@ -49,14 +76,24 @@ export default function HistorialPage() {
         return;
       }
 
+      // Verificar si el usuario es admin
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      setIsAdmin(profile?.role === 'admin');
+
       const { data } = await supabase
         .from('diagnoses')
         .select(`
-          id, 
-          cultivo_name, 
+          id,
+          cultivo_name,
           ai_diagnosis_md,
-          status, 
-          created_at, 
+          image_url,
+          status,
+          created_at,
           confidence_score,
           is_confirmed,
           confirmation_source,
@@ -116,21 +153,25 @@ export default function HistorialPage() {
     setDetailLoading(true);
     setSelectedDiagnosis(null);
     try {
-      // Cargar diagnóstico básico
+      // Cargar diagnóstico básico (incluye llm_reasoning solo si es admin)
+      const fields = `
+        id,
+        cultivo_name,
+        ai_diagnosis_md,
+        image_url,
+        confidence_score,
+        created_at,
+        gps_lat,
+        gps_long,
+        status,
+        is_confirmed,
+        confirmation_source
+        ${isAdmin ? ', llm_reasoning' : ''}
+      `;
+
       const { data, error } = await supabase
         .from('diagnoses')
-        .select(`
-          id, 
-          cultivo_name, 
-          ai_diagnosis_md, 
-          confidence_score, 
-          created_at, 
-          gps_lat, 
-          gps_long, 
-          status,
-          is_confirmed,
-          confirmation_source
-        `)
+        .select(fields)
         .eq('id', id)
         .single();
 
@@ -234,6 +275,7 @@ export default function HistorialPage() {
           <thead>
             <tr>
               <th>Fecha</th>
+              <th>Imagen</th>
               <th>Cultivo</th>
               <th>Diagnóstico</th>
               <th>Estado</th>
@@ -246,7 +288,7 @@ export default function HistorialPage() {
             {loading ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   style={{ padding: '24px', textAlign: 'center', color: 'var(--color-muted)' }}
                 >
                   Cargando historial...
@@ -255,7 +297,7 @@ export default function HistorialPage() {
             ) : diagnoses.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   style={{ padding: '24px', textAlign: 'center', color: 'var(--color-muted)' }}
                 >
                   Aún no tienes diagnósticos.
@@ -265,8 +307,26 @@ export default function HistorialPage() {
               diagnoses.map(diagnosis => (
                 <tr key={diagnosis.id}>
                   <td>{new Date(diagnosis.created_at).toLocaleString('es-ES')}</td>
+                  <td>
+                    {diagnosis.image_url ? (
+                      <img
+                        src={diagnosis.image_url}
+                        alt={`${diagnosis.cultivo_name} diagnosis`}
+                        style={{
+                          width: '60px',
+                          height: '60px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: '1px solid var(--color-border)',
+                          display: 'block',
+                        }}
+                      />
+                    ) : (
+                      <span style={{ color: 'var(--color-muted)', fontSize: '0.85rem' }}>Sin imagen</span>
+                    )}
+                  </td>
                   <td style={{ fontWeight: 600 }}>{diagnosis.cultivo_name}</td>
-                  <td style={{ color: 'var(--color-muted)' }}>{buildDiagnosisPreview(diagnosis.ai_diagnosis_md)}</td>
+                  <td style={{ fontWeight: 500 }}>{extractDiseaseName(diagnosis.ai_diagnosis_md)}</td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                       <span>{formatStatus(diagnosis)}</span>
@@ -373,21 +433,52 @@ export default function HistorialPage() {
             </p>
             {selectedDiagnosis.is_confirmed && (
               <div style={{marginTop: '0.5rem'}}>
-                <span 
-                  style={{ 
-                    background: 'var(--color-success-light)', 
-                    color: 'var(--color-success)', 
-                    padding: '0.35rem 0.75rem', 
-                    borderRadius: '12px', 
+                <span
+                  style={{
+                    background: 'var(--color-success-light)',
+                    color: 'var(--color-success)',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '12px',
                     fontSize: '0.85rem',
-                    fontWeight: 500
+                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
                   }}
                 >
-                  ✅ Confirmado por la base de conocimiento ({selectedDiagnosis.confirmation_source})
+                  <IconoTecRural size="xs" style={{ display: 'inline-block' }} />
+                  Confirmado por la base de conocimiento ({selectedDiagnosis.confirmation_source})
                 </span>
               </div>
             )}
           </div>
+
+          {/* Imagen del diagnóstico */}
+          {selectedDiagnosis.image_url && (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '1rem',
+                borderRadius: '16px',
+                background: '#f9fafb',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <img
+                src={selectedDiagnosis.image_url}
+                alt={`Diagnóstico de ${selectedDiagnosis.cultivo_name}`}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '400px',
+                  borderRadius: '12px',
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
+          )}
+
           <div
             style={{
               padding: '1.5rem',
@@ -402,22 +493,57 @@ export default function HistorialPage() {
             </ReactMarkdown>
           </div>
 
-          {/* Componente de indicador RAG */}
-          <RagUsageIndicator
-            diagnosisId={selectedDiagnosis.id}
-            highlightFilename={selectedDiagnosis.confirmation_source}
-          />
- 
+          {/* Componente de indicador RAG - Solo para administradores */}
+          {isAdmin && (
+            <RagUsageIndicator
+              diagnosisId={selectedDiagnosis.id}
+              highlightFilename={selectedDiagnosis.confirmation_source}
+            />
+          )}
+
+          {/* Cadena de razonamiento del LLM - Solo para administradores */}
+          {isAdmin && selectedDiagnosis.llm_reasoning && (
+            <div className="card" style={{ background: '#fff5e6', border: '2px solid #ff9800' }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#e65100', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🔒 Cadena de Razonamiento del LLM (Solo Administrador)
+                </h3>
+                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: '#666' }}>
+                  Esta sección muestra el proceso de razonamiento completo que utilizó el modelo de IA para llegar al diagnóstico.
+                </p>
+              </div>
+              <div
+                style={{
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  background: '#fff',
+                  border: '1px solid #ffa726',
+                  maxHeight: '400px',
+                  overflowY: 'auto',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: '1.6',
+                }}
+              >
+                {selectedDiagnosis.llm_reasoning}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn-gradient"
               disabled={confirmLoading || selectedDiagnosis.is_confirmed}
               onClick={() => handleConfirmDiagnosis(selectedDiagnosis.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
+              <IconoTecRural size="sm" style={{ display: 'inline-block' }} />
               {selectedDiagnosis.is_confirmed ? 'Confirmado' : confirmLoading ? 'Confirmando...' : 'Confirmar'}
             </button>
-            <a href="/dashboard/nueva-consulta" className="btn-secondary">
+            <a href="/dashboard/nueva-consulta" className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <IconoTecRural size="sm" style={{ display: 'inline-block' }} />
               Nueva fotografía
             </a>
             <a
@@ -425,7 +551,9 @@ export default function HistorialPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="btn-outline"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
+              <IconoTecRural size="sm" style={{ display: 'inline-block' }} />
               Descargar PDF
             </a>
           </div>

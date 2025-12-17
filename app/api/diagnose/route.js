@@ -92,6 +92,7 @@ export async function POST(request) {
     }
 
     // NOTIFICACIÓN AUTOMÁTICA POR WHATSAPP (no bloqueante)
+    // TEMPORALMENTE DESHABILITADA - INVESTIGAR BUCLE DE NOTIFICACIONES
     if (diagnosisResult.diagnosis) {
       // Ejecutar notificación de forma asíncrona sin bloquear la respuesta
       (async () => {
@@ -106,8 +107,13 @@ export async function POST(request) {
           // Solo enviar notificación si:
           // 1. El usuario tiene teléfono registrado
           // 2. Las notificaciones de WhatsApp están habilitadas (por defecto true)
-          if (profile?.phone && profile?.notify_whatsapp_on_diagnosis !== false) {
-            const diagnosis = diagnosisResult.diagnosis;
+          // 3. El diagnóstico no fue notificado recientemente (prevenir duplicados)
+
+          const diagnosis = diagnosisResult.diagnosis;
+          const NOTIFICATION_COOLDOWN = 5 * 60 * 1000; // 5 minutos en ms
+          const timeSinceDiagnosis = Date.now() - new Date(diagnosis.created_at).getTime();
+
+          if (profile?.phone && profile?.notify_whatsapp_on_diagnosis !== false && timeSinceDiagnosis < NOTIFICATION_COOLDOWN) {
             const confidence = diagnosis.confidence_score
               ? Math.round(diagnosis.confidence_score * 100)
               : 0;
@@ -129,9 +135,11 @@ export async function POST(request) {
               });
             }
 
-            console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone);
+            console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);
           } else if (profile?.phone && profile?.notify_whatsapp_on_diagnosis === false) {
             console.log('[diagnose] Notificación WhatsApp omitida: usuario deshabilitó notificaciones');
+          } else if (timeSinceDiagnosis >= NOTIFICATION_COOLDOWN) {
+            console.log('[diagnose] Notificación WhatsApp omitida: diagnóstico antiguo (más de 5 min)');
           } else {
             console.log('[diagnose] No se envió notificación WhatsApp: usuario sin teléfono registrado');
           }

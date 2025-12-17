@@ -96,14 +96,17 @@ export async function POST(request) {
       // Ejecutar notificación de forma asíncrona sin bloquear la respuesta
       (async () => {
         try {
-          // Obtener teléfono del usuario
+          // Obtener teléfono y preferencias de notificación del usuario
           const { data: profile } = await supabaseAuth
             .from('profiles')
-            .select('phone')
+            .select('phone, notify_whatsapp_on_diagnosis')
             .eq('id', user.id)
             .maybeSingle();
 
-          if (profile?.phone) {
+          // Solo enviar notificación si:
+          // 1. El usuario tiene teléfono registrado
+          // 2. Las notificaciones de WhatsApp están habilitadas (por defecto true)
+          if (profile?.phone && profile?.notify_whatsapp_on_diagnosis !== false) {
             const diagnosis = diagnosisResult.diagnosis;
             const confidence = diagnosis.confidence_score
               ? Math.round(diagnosis.confidence_score * 100)
@@ -127,6 +130,10 @@ export async function POST(request) {
             }
 
             console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone);
+          } else if (profile?.phone && profile?.notify_whatsapp_on_diagnosis === false) {
+            console.log('[diagnose] Notificación WhatsApp omitida: usuario deshabilitó notificaciones');
+          } else {
+            console.log('[diagnose] No se envió notificación WhatsApp: usuario sin teléfono registrado');
           }
         } catch (notifError) {
           // Log pero no fallar el diagnóstico

@@ -59,26 +59,32 @@ export async function POST(request) {
   try {
     const body = await request.json();
 
-    console.log('[whatsapp-webhook] Webhook recibido:', JSON.stringify(body, null, 2));
+    console.log('[whatsapp-webhook] ✅ WEBHOOK RECIBIDO');
+    console.log('[whatsapp-webhook] Body:', JSON.stringify(body, null, 2));
 
     // Validar estructura del webhook
     if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
+      console.log('[whatsapp-webhook] ⚠️ Sin mensajes en el webhook (puede ser una notificación de estado)');
       return NextResponse.json({ success: true, message: 'No messages to process' }, { status: 200 });
     }
+
+    console.log(`[whatsapp-webhook] 📩 Total mensajes recibidos: ${body.messages.length}`);
 
     // Procesar solo mensajes entrantes (from_me: false)
     const incomingMessages = body.messages.filter(msg => !msg.from_me);
 
+    console.log(`[whatsapp-webhook] 📥 Mensajes entrantes: ${incomingMessages.length}`);
+
     for (const message of incomingMessages) {
       // Procesar cada mensaje de forma asíncrona pero secuencial
       await processIncomingMessage(message).catch(err => {
-        console.error('[whatsapp-webhook] Error procesando mensaje:', err);
+        console.error('[whatsapp-webhook] ❌ Error procesando mensaje:', err);
       });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('[whatsapp-webhook] Error procesando webhook:', error);
+    console.error('[whatsapp-webhook] ❌ Error procesando webhook:', error);
     return NextResponse.json(
       {
         success: false,
@@ -87,6 +93,27 @@ export async function POST(request) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Endpoint de prueba para verificar que el webhook está funcionando
+ * GET /api/webhooks/whatsapp
+ */
+export async function GET() {
+  return NextResponse.json({
+    status: 'webhook_active',
+    message: 'El webhook de WhatsApp está activo y funcionando',
+    expected_post_format: {
+      messages: [
+        {
+          from_me: false,
+          text: { body: 'mensaje' },
+          type: 'text'
+        }
+      ]
+    },
+    timestamp: new Date().toISOString()
+  });
 }
 
 /**

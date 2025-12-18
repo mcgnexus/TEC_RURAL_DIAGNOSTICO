@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useUserContext } from './UserContext';
 import Logo from './Logo';
 
@@ -20,8 +21,18 @@ const adminItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { profile } = useUserContext();
+  const router = useRouter();
+  const { profile, logout } = useUserContext();
   const isAdmin = profile?.role === 'admin';
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    }
+  };
 
   const renderLink = item => {
     const active = pathname === item.href;
@@ -66,6 +77,29 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+
+      <div style={{ marginTop: 'auto', paddingTop: 32 }}>
+        <button
+          onClick={handleLogout}
+          className="nav-link"
+          style={{
+            background: 'none',
+            border: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            width: '100%',
+            color: 'rgba(255,255,255,0.7)',
+          }}
+          onMouseEnter={e => {
+            e.target.style.color = 'rgba(255,255,255,0.9)';
+          }}
+          onMouseLeave={e => {
+            e.target.style.color = 'rgba(255,255,255,0.7)';
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
     </aside>
   );
 }

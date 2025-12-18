@@ -8,6 +8,7 @@ const UserContext = createContext({
   profile: null,
   loading: true,
   refreshProfile: async () => {},
+  logout: async () => {},
 });
 
 export function UserProvider({ children }) {
@@ -69,14 +70,19 @@ export function UserProvider({ children }) {
     }
   }, [fetchProfile, user]);
 
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
       profile,
       loading,
       refreshProfile,
+      logout,
     }),
-    [user, profile, loading, refreshProfile]
+    [user, profile, loading, refreshProfile, logout]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

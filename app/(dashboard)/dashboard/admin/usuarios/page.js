@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useUserContext } from '@/components/UserContext';
+import { supabase } from '@/lib/supabaseBrowser';
 
 const placeholderImage =
   'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=300&q=60';
@@ -21,7 +22,17 @@ export default function UsuariosAdminPage() {
       setIsLoading(true);
       setError('');
       try {
-        const response = await fetch('/api/admin/users');
+        // Obtener el token de sesión actual
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          throw new Error('No hay sesión activa');
+        }
+
+        const response = await fetch('/api/admin/users', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.error || 'No se pudo cargar la lista de usuarios.');

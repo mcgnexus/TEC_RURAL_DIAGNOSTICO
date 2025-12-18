@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { runDiagnosis } from '@/lib/diagnosisEngine';
 import { sendWhatsAppText, sendWhatsAppImage } from '@/lib/whapi';
 import { sendTelegramMessage, sendTelegramPhoto } from '@/lib/telegram/telegramApi';
+import { maskId, maskPhone, redactForLog } from '@/lib/logging';
 
 export const runtime = 'nodejs';
 
@@ -139,7 +140,11 @@ export async function POST(request) {
               });
             }
 
-            console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);
+            console.log(
+              '[diagnose] Notificación WhatsApp enviada a:',
+              maskPhone(profile.phone),
+              `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`
+            );
           } else if (profile?.phone && profile?.notify_whatsapp_on_diagnosis === false) {
             console.log('[diagnose] Notificación WhatsApp omitida: usuario deshabilitó notificaciones');
           } else if (timeSinceDiagnosis >= NOTIFICATION_FRESHNESS) {
@@ -149,7 +154,7 @@ export async function POST(request) {
           }
         } catch (notifError) {
           // Log pero no fallar el diagnóstico
-          console.error('[diagnose] Error en notificación WhatsApp:', notifError);
+          console.error('[diagnose] Error en notificación WhatsApp:', redactForLog(notifError));
         }
       })();
     }
@@ -192,7 +197,11 @@ export async function POST(request) {
               );
             }
 
-            console.log('[diagnose] Notificación Telegram enviada a:', profile.telegram_id, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);
+            console.log(
+              '[diagnose] Notificación Telegram enviada a:',
+              maskId(profile.telegram_id),
+              `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`
+            );
           } else if (profile?.telegram_id && profile?.notify_telegram_on_diagnosis === false) {
             console.log('[diagnose] Notificación Telegram omitida: usuario deshabilitó notificaciones');
           } else if (timeSinceDiagnosis >= NOTIFICATION_FRESHNESS) {
@@ -202,7 +211,7 @@ export async function POST(request) {
           }
         } catch (notifError) {
           // Log pero no fallar el diagnóstico
-          console.error('[diagnose] Error en notificación Telegram:', notifError);
+          console.error('[diagnose] Error en notificación Telegram:', redactForLog(notifError));
         }
       })();
     }
@@ -215,7 +224,7 @@ export async function POST(request) {
       ragUsage: diagnosisResult.ragUsage || null,
     });
   } catch (error) {
-    console.error('Diagnose API error:', error);
+    console.error('Diagnose API error:', redactForLog(error));
     return NextResponse.json({ error: error.message || 'Error inesperado.' }, { status: 500 });
   }
 }

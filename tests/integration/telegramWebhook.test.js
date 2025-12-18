@@ -52,6 +52,20 @@ describe('Telegram Webhook Route', () => {
     process.env.TELEGRAM_WEBHOOK_SECRET = ''; 
   });
 
+  it('should reject request with invalid secret token when configured', async () => {
+    process.env.TELEGRAM_WEBHOOK_SECRET = 'secret';
+
+    const request = {
+      json: async () => ({ update_id: 1 }),
+      headers: { get: () => 'wrong' }
+    };
+
+    const response = await POST(request);
+    expect(response.status).toBe(401);
+    expect(telegramApi.sendTelegramMessage).not.toHaveBeenCalled();
+    expect(telegramApi.sendTelegramPhoto).not.toHaveBeenCalled();
+  });
+
   it('should return 200 for empty or invalid body', async () => {
     const body = {};
     const request = {

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireAdminAuth } from '@/lib/auth/middleware';
+import { createSecureServiceRole } from '@/lib/auth/secureServiceRole';
 
 /**
  * Normaliza un número de teléfono al formato internacional E.164
@@ -40,16 +42,22 @@ const fetchLatestImages = async supabase => {
   return map;
 };
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const supabase = supabaseAdmin;
-    const { data: profiles, error } = await supabase
+    // Verificar autenticación de admin
+    const { error, user } = await requireAdminAuth(request);
+    if (error) return error;
+
+    // Usar service role de manera segura con auditoría
+    const secure = createSecureServiceRole(user.id, 'admin');
+    const supabase = secure.getClient();
+    const { data: profiles, error: queryError } = await supabase
       .from('profiles')
       .select('id,email,first_name,last_name,phone,credits_remaining,role,notify_whatsapp_on_diagnosis,created_at,updated_at')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (queryError) {
+      return NextResponse.json({ error: queryError.message }, { status: 500 });
     }
 
     const imageMap = await fetchLatestImages(supabase);
@@ -67,7 +75,13 @@ export async function GET() {
 
 export async function PATCH(request) {
   try {
-    const supabase = supabaseAdmin;
+    // Verificar autenticación de admin
+    const { error, user } = await requireAdminAuth(request);
+    if (error) return error;
+
+    // Usar service role de manera segura con auditoría
+    const secure = createSecureServiceRole(user.id, 'admin');
+    const supabase = secure.getClient();
     const body = await request.json();
     const { userId, ...updates } = body;
 
@@ -94,15 +108,15 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'No se enviaron campos válidos para actualizar.' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error: updateError } = await supabase
       .from('profiles')
       .update(filteredUpdates)
       .eq('id', userId)
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, profile: data });

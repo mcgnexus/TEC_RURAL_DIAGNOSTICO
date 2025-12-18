@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTelegramMessage } from '@/lib/telegram/telegramApi';
+import { maskId, redactForLog } from '@/lib/logging';
 
 export const runtime = 'nodejs';
 
@@ -99,7 +100,7 @@ export async function POST(request) {
 
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'TecRuralDiagBot';
 
-    console.log(`[telegram-link] Token generado para usuario ${user.id}: ${token}`);
+    console.log('[telegram-link] Token generado', { user: maskId(user.id) });
 
     return NextResponse.json({
       success: true,
@@ -111,7 +112,7 @@ export async function POST(request) {
       qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://t.me/${botUsername}?start=${token}`,
     });
   } catch (error) {
-    console.error('[telegram-link] Error:', error);
+    console.error('[telegram-link] Error:', redactForLog(error));
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

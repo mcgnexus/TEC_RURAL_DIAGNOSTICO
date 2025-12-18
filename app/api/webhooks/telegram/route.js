@@ -20,6 +20,8 @@ import {
   sendTelegramPhoto,
   downloadTelegramFile,
 } from '@/lib/telegram/telegramApi';
+import { requireTelegramWebhookAuth } from '@/lib/auth/middleware';
+import { maskId, redactForLog, redactString } from '@/lib/logging';
 
 export const runtime = 'nodejs';
 
@@ -52,7 +54,7 @@ async function linkTelegramAccountWithToken({ token, telegramId, telegramUsernam
     .maybeSingle();
 
   if (tokenError) {
-    console.error('[telegram-webhook] Error consultando token de vinculación:', tokenError);
+    console.error('[telegram-webhook] Error consultando token de vinculación:', redactForLog(tokenError));
     return { success: false, error: 'No se pudo validar el token. Contacta al administrador.' };
   }
 
@@ -82,7 +84,7 @@ async function linkTelegramAccountWithToken({ token, telegramId, telegramUsernam
     .maybeSingle();
 
   if (alreadyLinkedError) {
-    console.error('[telegram-webhook] Error verificando telegram_id existente:', alreadyLinkedError);
+    console.error('[telegram-webhook] Error verificando telegram_id existente:', redactForLog(alreadyLinkedError));
   }
 
   if (alreadyLinkedProfile && alreadyLinkedProfile.id !== linkToken.user_id) {
@@ -102,7 +104,7 @@ async function linkTelegramAccountWithToken({ token, telegramId, telegramUsernam
     .eq('id', linkToken.user_id);
 
   if (updateProfileError) {
-    console.error('[telegram-webhook] Error vinculando cuenta:', updateProfileError);
+    console.error('[telegram-webhook] Error vinculando cuenta:', redactForLog(updateProfileError));
     return { success: false, error: 'No se pudo vincular tu cuenta. Contacta al administrador.' };
   }
 
@@ -115,7 +117,7 @@ async function linkTelegramAccountWithToken({ token, telegramId, telegramUsernam
     .eq('id', linkToken.id);
 
   if (markUsedError) {
-    console.error('[telegram-webhook] Error marcando token como usado:', markUsedError);
+    console.error('[telegram-webhook] Error marcando token como usado:', redactForLog(markUsedError));
   }
 
   return { success: true, userId: linkToken.user_id };
@@ -144,9 +146,9 @@ async function markMessageAsProcessed(updateId, phone, telegramId) {
       return;
     }
 
-    console.error('[telegram-webhook] Error marcando update como procesado:', error);
+    console.error('[telegram-webhook] Error marcando update como procesado:', redactForLog(error));
   } catch (error) {
-    console.error('[telegram-webhook] Error en markMessageAsProcessed:', error);
+    console.error('[telegram-webhook] Error en markMessageAsProcessed:', redactForLog(error));
   }
 }
 
@@ -188,7 +190,7 @@ async function handleCommand(command, telegramId, userId, profile) {
       await sendTelegramMessage(telegramId, response);
     }
   } catch (error) {
-    console.error(`[telegram-webhook] Error ejecutando comando ${command}:`, error);
+    console.error(`[telegram-webhook] Error ejecutando comando ${command}:`, redactForLog(error));
     await sendTelegramMessage(
       telegramId,
       'Ocurrió un error procesando tu comando. Intenta nuevamente más tarde.'
@@ -210,14 +212,8 @@ function getQuickDiagnosisPhoto(message) {
 
 export async function POST(request) {
   try {
-    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const incomingSecret = request.headers.get('x-telegram-bot-api-secret-token');
-      if (incomingSecret !== webhookSecret) {
-        console.warn('[telegram-webhook] Secret token inválido, ignorando request');
-        return NextResponse.json({ success: true }, { status: 200 });
-      }
-    }
+    const { error } = requireTelegramWebhookAuth(request);
+    if (error) return error;
 
     const body = await request.json();
     const updateId = body?.update_id;
@@ -236,7 +232,7 @@ export async function POST(request) {
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('[telegram-webhook] Error procesando webhook:', error);
+    console.error('[telegram-webhook] Error procesando webhook:', redactForLog(error));
     return NextResponse.json(
       {
         success: false,
@@ -276,7 +272,7 @@ async function processIncomingTelegramUpdate(updateId, message) {
       .maybeSingle();
 
     if (dedupError) {
-      console.error('[telegram-webhook] Error verificando deduplicación:', dedupError);
+      console.error('[telegram-webhook] Error verificando deduplicación:', redactForLog(dedupError));
     }
 
     if (existing) {
@@ -316,7 +312,7 @@ async function processIncomingTelegramUpdate(updateId, message) {
     }
 
     if (!profile) {
-      console.log(`[telegram-webhook] Usuario no registrado: telegramId=${normalizedTelegramId}`);
+      console.log(`[telegram-webhook] Usuario no registrado: telegramId=${maskId(normalizedTelegramId)}`);
       await showStartMenu(normalizedTelegramId, false);
       return;
     }
@@ -412,7 +408,7 @@ o usa /nuevo para el flujo paso a paso.`
     }
 
     if (diagnosisResult.error) {
-      console.error('[telegram-webhook] Error en diagnóstico rápido:', diagnosisResult.error);
+      console.error('[telegram-webhook] Error en diagnóstico rápido:', redactForLog(diagnosisResult.error));
       await sendTelegramMessage(
         telegramId,
         diagnosisResult.error ||
@@ -446,10 +442,10 @@ ${diagnosis?.ai_diagnosis_md || 'Diagnóstico no disponible.'}
     }
 
     console.log(
-      `[telegram-webhook] Diagnóstico rápido completado para telegramId=${telegramId}, ID=${diagnosis?.id}`
+      `[telegram-webhook] Diagnóstico rápido completado para telegramId=${maskId(telegramId)}, ID=${maskId(diagnosis?.id)}`
     );
   } catch (error) {
-    console.error('[telegram-webhook] Error en diagnóstico rápido:', error);
+    console.error('[telegram-webhook] Error en diagnóstico rápido:', redactForLog(error));
     await sendTelegramMessage(
       telegramId,
       'Ocurrió un error procesando tu imagen. Intenta nuevamente en unos minutos.'
@@ -508,7 +504,7 @@ async function handleCultivoInput(message, telegramId) {
     return;
   }
 
-  console.log(`[telegram-webhook] Cultivo recibido: ${text}`);
+  console.log(`[telegram-webhook] Cultivo recibido: ${redactString(text)}`);
 
   await updateSessionState(telegramId, 'awaiting_notes', { cultivo_name: text });
 
@@ -541,7 +537,7 @@ async function handleNotesInput(message, telegramId) {
       : message.text?.trim() || '';
 
   console.log(
-    `[telegram-webhook] Notas recibidas: ${notes ? notes.substring(0, 50) + '...' : 'omitir'}`
+    `[telegram-webhook] Notas recibidas: ${notes ? redactString(notes).substring(0, 50) + '...' : 'omitir'}`
   );
 
   await updateSessionState(telegramId, 'awaiting_image', { user_notes: notes });
@@ -560,7 +556,7 @@ async function handleImageInput(message, telegramId, userId, profile) {
     return;
   }
 
-  console.log('[telegram-webhook] Mensaje con foto recibido:', JSON.stringify(message, null, 2));
+  console.log('[telegram-webhook] Mensaje con foto recibido:', JSON.stringify(redactForLog(message), null, 2));
 
   if ((profile?.credits_remaining || 0) <= 0) {
     await sendTelegramMessage(
@@ -605,7 +601,7 @@ async function handleImageInput(message, telegramId, userId, profile) {
     }
 
     if (diagnosisResult.error) {
-      console.error('[telegram-webhook] Error en diagnóstico:', diagnosisResult.error);
+      console.error('[telegram-webhook] Error en diagnóstico:', redactForLog(diagnosisResult.error));
       await sendTelegramMessage(
         telegramId,
         diagnosisResult.error ||
@@ -642,10 +638,10 @@ ${diagnosis?.ai_diagnosis_md || 'Diagnóstico no disponible.'}
     await clearSession(telegramId);
 
     console.log(
-      `[telegram-webhook] Diagnóstico completado para telegramId=${telegramId}, ID=${diagnosis?.id}`
+      `[telegram-webhook] Diagnóstico completado para telegramId=${maskId(telegramId)}, ID=${maskId(diagnosis?.id)}`
     );
   } catch (error) {
-    console.error('[telegram-webhook] Error procesando imagen:', error);
+    console.error('[telegram-webhook] Error procesando imagen:', redactForLog(error));
     await sendTelegramMessage(
       telegramId,
       'Ocurrió un error procesando tu imagen. Por favor intenta nuevamente más tarde.'
@@ -668,7 +664,9 @@ async function processCallbackQuery(updateId, callbackQuery) {
     return;
   }
 
-  console.log(`[telegram-webhook] Callback query recibida: telegramId=${telegramId}, data=${callbackData}`);
+  console.log(
+    `[telegram-webhook] Callback query recibida: telegramId=${maskId(telegramId)}, data=${redactString(callbackData)}`
+  );
 
   try {
     // Encontrar usuario
@@ -730,7 +728,7 @@ async function processCallbackQuery(updateId, callbackQuery) {
           });
         }
       } catch (err) {
-        console.error('[telegram-webhook] Error enviando answerCallbackQuery:', err);
+        console.error('[telegram-webhook] Error enviando answerCallbackQuery:', redactForLog(err));
       }
     } else {
       await sendTelegramMessage(
@@ -742,7 +740,7 @@ async function processCallbackQuery(updateId, callbackQuery) {
     // Marcar update como procesado
     await markMessageAsProcessed(updateId, null, telegramId);
   } catch (error) {
-    console.error('[telegram-webhook] Error procesando callback query:', error);
+    console.error('[telegram-webhook] Error procesando callback query:', redactForLog(error));
     await sendTelegramMessage(
       telegramId,
       'Ocurrió un error. Intenta nuevamente más tarde.'

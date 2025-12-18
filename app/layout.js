@@ -1,12 +1,13 @@
-import "./globals.css";
+﻿import "./globals.css";
 
 export const metadata = {
-  title: "TEC Rural Diagnóstico",
-  description: "Diagnósticos agrícolas con IA y RAG",
+  title: "TEC Rural DiagnИstico",
+  description: "DiagnИsticos agrヴcolas con IA y RAG",
   icons: {
-    icon: '/TecRural_icono.svg',
-    apple: '/TecRural_icono.svg',
+    icon: "/TecRural_icono.svg",
+    apple: "/TecRural_icono.svg",
   },
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }) {
@@ -16,3 +17,4 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
+

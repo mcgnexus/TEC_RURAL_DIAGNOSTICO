@@ -19,6 +19,8 @@ import {
   downloadWhatsAppMedia,
 } from '@/lib/whapi';
 import { runDiagnosis } from '@/lib/diagnosisEngine';
+import { requireWhapiWebhookAuth } from '@/lib/auth/middleware';
+import { maskId, maskPhone, redactForLog, redactString } from '@/lib/logging';
 
 export const runtime = 'nodejs';
 
@@ -67,9 +69,9 @@ async function markMessageAsProcessed(messageId, phone) {
       return;
     }
 
-    console.error('[whatsapp-webhook] Error marcando mensaje como procesado:', error);
+    console.error('[whatsapp-webhook] Error marcando mensaje como procesado:', redactForLog(error));
   } catch (error) {
-    console.error('[whatsapp-webhook] Error en markMessageAsProcessed:', error);
+    console.error('[whatsapp-webhook] Error en markMessageAsProcessed:', redactForLog(error));
   }
 }
 
@@ -78,10 +80,14 @@ async function markMessageAsProcessed(messageId, phone) {
  */
 export async function POST(request) {
   try {
-    const body = await request.json();
+    const rawBody = await request.text();
+    const { error } = requireWhapiWebhookAuth(request, rawBody);
+    if (error) return error;
+
+    const body = rawBody ? JSON.parse(rawBody) : {};
 
     console.log('[whatsapp-webhook] ✅ WEBHOOK RECIBIDO');
-    console.log('[whatsapp-webhook] Body:', JSON.stringify(body, null, 2));
+    console.log('[whatsapp-webhook] Body:', JSON.stringify(redactForLog(body), null, 2));
 
     const messages = extractWhapiMessages(body);
 
@@ -101,13 +107,13 @@ export async function POST(request) {
     for (const message of incomingMessages) {
       // Procesar cada mensaje de forma asíncrona pero secuencial
       await processIncomingMessage(message).catch(err => {
-        console.error('[whatsapp-webhook] ❌ Error procesando mensaje:', err);
+        console.error('[whatsapp-webhook] ❌ Error procesando mensaje:', redactForLog(err));
       });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('[whatsapp-webhook] ❌ Error procesando webhook:', error);
+    console.error('[whatsapp-webhook] ❌ Error procesando webhook:', redactForLog(error));
     return NextResponse.json(
       {
         success: false,
@@ -159,7 +165,7 @@ async function processIncomingMessage(message) {
 
   try {
     if (!phone) {
-      console.warn('[whatsapp-webhook] No se pudo normalizar el teléfono:', chat_id);
+      console.warn('[whatsapp-webhook] No se pudo normalizar el teléfono:', maskPhone(chat_id));
       return;
     }
 
@@ -172,7 +178,7 @@ async function processIncomingMessage(message) {
         .maybeSingle();
 
       if (error) {
-        console.error('[whatsapp-webhook] Error verificando deduplicación:', error);
+        console.error('[whatsapp-webhook] Error verificando deduplicación:', redactForLog(error));
       }
 
       if (existing) {
@@ -181,7 +187,7 @@ async function processIncomingMessage(message) {
       }
     }
 
-    console.log(`[whatsapp-webhook] Procesando mensaje de ${phone}, tipo: ${type}`);
+    console.log(`[whatsapp-webhook] Procesando mensaje de ${maskPhone(phone)}, tipo: ${type}`);
 
     // 1. AUTENTICACIÓN: Verificar si el usuario está registrado
     const phoneDigits = String(phone).replace(/[^\d]/g, '');
@@ -205,7 +211,7 @@ async function processIncomingMessage(message) {
     }
 
     if (!profile) {
-      console.log(`[whatsapp-webhook] Usuario no registrado: ${phone}`);
+      console.log(`[whatsapp-webhook] Usuario no registrado: ${maskPhone(phone)}`);
       await sendWhatsAppText({
         to: phone,
         text: 'Tu número no está registrado en TEC Rural Diagnóstico.\n\nPor favor regístrate en la aplicación web primero:\nhttps://tec-rural-diagnostico.vercel.app',
@@ -214,7 +220,7 @@ async function processIncomingMessage(message) {
     }
 
     const userId = profile.id;
-    console.log(`[whatsapp-webhook] Usuario autenticado: ${userId}`);
+    console.log(`[whatsapp-webhook] Usuario autenticado: ${maskId(userId)}`);
 
     // 2. DETECCIÓN DE COMANDOS
     if (type === 'text') {
@@ -249,7 +255,7 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
   const imageData = message.image;
   const caption = imageData.caption?.trim() || '';
 
-  console.log('[whatsapp-webhook] Caption recibido:', caption);
+  console.log('[whatsapp-webhook] Caption recibido:', redactString(caption));
 
   // Verificar créditos
   if (profile.credits_remaining <= 0) {
@@ -282,7 +288,9 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
     return;
   }
 
-  console.log(`[whatsapp-webhook] Diagnóstico rápido - Cultivo: ${cultivoName}, Notas: ${notes || 'ninguna'}`);
+  console.log(
+    `[whatsapp-webhook] Diagnóstico rápido - Cultivo: ${redactString(cultivoName)}, Notas: ${notes ? redactString(notes) : 'ninguna'}`
+  );
 
   // Obtener URL de la imagen
   const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
@@ -300,7 +308,7 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
     });
 
     // Descargar imagen
-    console.log('[whatsapp-webhook] Descargando imagen desde:', imageUrl);
+    console.log('[whatsapp-webhook] Descargando imagen desde:', redactString(imageUrl));
     const imageBuffer = await downloadWhatsAppMedia(imageUrl);
     const mimeType = imageData.mime_type || imageData.mimetype || 'image/jpeg';
 
@@ -326,7 +334,7 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
     }
 
     if (diagnosisResult.error) {
-      console.error('[whatsapp-webhook] Error en diagnóstico rápido:', diagnosisResult.error);
+      console.error('[whatsapp-webhook] Error en diagnóstico rápido:', redactForLog(diagnosisResult.error));
       await sendWhatsAppError(phone, diagnosisResult.error);
       return;
     }
@@ -341,9 +349,11 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
 
     await sendWhatsAppText({ to: phone, text: resultText });
 
-    console.log(`[whatsapp-webhook] Diagnóstico rápido completado para ${phone}, ID: ${diagnosis.id}`);
+    console.log(
+      `[whatsapp-webhook] Diagnóstico rápido completado para ${maskPhone(phone)}, ID: ${maskId(diagnosis.id)}`
+    );
   } catch (error) {
-    console.error('[whatsapp-webhook] Error en diagnóstico rápido:', error);
+    console.error('[whatsapp-webhook] Error en diagnóstico rápido:', redactForLog(error));
     await sendWhatsAppError(
       phone,
       'Ocurrió un error procesando tu imagen. Por favor intenta nuevamente más tarde.'
@@ -458,7 +468,7 @@ async function handleCultivoInput(message, phone) {
     return;
   }
 
-  console.log(`[whatsapp-webhook] Cultivo recibido: ${cultivoName}`);
+  console.log(`[whatsapp-webhook] Cultivo recibido: ${redactString(cultivoName)}`);
 
   // Guardar cultivo y avanzar al siguiente estado
   await updateSessionState(phone, 'awaiting_notes', { cultivo_name: cultivoName });
@@ -520,7 +530,7 @@ async function handleImageInput(message, phone, userId, profile) {
   }
 
   // Log completo del mensaje para debugging
-  console.log('[whatsapp-webhook] Mensaje completo recibido:', JSON.stringify(message, null, 2));
+  console.log('[whatsapp-webhook] Mensaje completo recibido:', JSON.stringify(redactForLog(message), null, 2));
 
   const imageData = message.image;
 
@@ -530,7 +540,7 @@ async function handleImageInput(message, phone, userId, profile) {
     return;
   }
 
-  console.log('[whatsapp-webhook] imageData:', JSON.stringify(imageData, null, 2));
+  console.log('[whatsapp-webhook] imageData:', JSON.stringify(redactForLog(imageData), null, 2));
 
   // Intentar diferentes campos donde podría estar la URL
   const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
@@ -541,10 +551,10 @@ async function handleImageInput(message, phone, userId, profile) {
     return;
   }
 
-  console.log('[whatsapp-webhook] URL de imagen encontrada:', imageUrl);
+  console.log('[whatsapp-webhook] URL de imagen encontrada:', redactString(imageUrl));
 
   try {
-    console.log(`[whatsapp-webhook] Procesando imagen: ${imageUrl}`);
+    console.log(`[whatsapp-webhook] Procesando imagen: ${redactString(imageUrl)}`);
 
     // Verificar créditos nuevamente antes de procesar
     if (profile && profile.credits_remaining <= 0) {
@@ -565,7 +575,7 @@ async function handleImageInput(message, phone, userId, profile) {
     });
 
     // Descargar imagen
-    console.log('[whatsapp-webhook] Intentando descargar imagen desde:', imageUrl);
+    console.log('[whatsapp-webhook] Intentando descargar imagen desde:', redactString(imageUrl));
     const imageBuffer = await downloadWhatsAppMedia(imageUrl);
     const mimeType = imageData.mime_type || imageData.mimetype || 'image/jpeg';
     console.log('[whatsapp-webhook] Imagen descargada exitosamente:', imageBuffer.length, 'bytes');
@@ -602,7 +612,7 @@ async function handleImageInput(message, phone, userId, profile) {
     }
 
     if (diagnosisResult.error) {
-      console.error('[whatsapp-webhook] Error en diagnóstico:', diagnosisResult.error);
+      console.error('[whatsapp-webhook] Error en diagnóstico:', redactForLog(diagnosisResult.error));
       await sendWhatsAppError(phone, diagnosisResult.error);
       await clearSession(phone);
       return;
@@ -621,9 +631,9 @@ async function handleImageInput(message, phone, userId, profile) {
     // Limpiar sesión
     await clearSession(phone);
 
-    console.log(`[whatsapp-webhook] Diagnóstico completado para ${phone}, ID: ${diagnosis.id}`);
+    console.log(`[whatsapp-webhook] Diagnóstico completado para ${maskPhone(phone)}, ID: ${maskId(diagnosis.id)}`);
   } catch (error) {
-    console.error('[whatsapp-webhook] Error procesando imagen:', error);
+    console.error('[whatsapp-webhook] Error procesando imagen:', redactForLog(error));
     await sendWhatsAppError(
       phone,
       'Ocurrió un error procesando tu imagen. Por favor intenta nuevamente más tarde.'

@@ -170,8 +170,7 @@ export default function NuevaConsultaPage() {
         console.log({
           cultivoName: cultivoName.trim(),
           notesChars: notes.trim().length,
-          gpsLat: gpsData.lat,
-          gpsLong: gpsData.long,
+          hasGps: Boolean(gpsData.lat && gpsData.long),
         });
       }
 
@@ -193,7 +192,11 @@ export default function NuevaConsultaPage() {
           requestId,
           elapsedMs: Math.round(elapsedMs),
         });
-        console.log('[diagnose] body', result);
+        console.log('[diagnose] body', {
+          success: Boolean(result?.success),
+          needsBetterPhoto: Boolean(result?.needsBetterPhoto),
+          hasError: Boolean(result?.error),
+        });
       }
 
       if (!response.ok) {

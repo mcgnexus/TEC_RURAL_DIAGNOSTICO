@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireSetupAuth } from '@/lib/auth/middleware';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export async function POST() {
+export async function POST(request) {
   try {
+    // Verificar autenticación
+    const authResult = await requireSetupAuth(request);
+    if (authResult.error) return authResult.error;
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         persistSession: false,

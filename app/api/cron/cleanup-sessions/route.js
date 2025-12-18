@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireCronAuth } from '@/lib/auth/middleware';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,36 +12,20 @@ export const dynamic = 'force-dynamic';
 export async function GET(request) {
   try {
     // Verificar autenticación del cron job
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret) {
-      console.error('[cron-cleanup] CRON_SECRET no configurado');
-      return NextResponse.json(
-        { error: 'Cron secret not configured' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      console.warn('[cron-cleanup] Intento de acceso no autorizado');
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { error, valid } = requireCronAuth(request);
+    if (error) return error;
 
     console.log('[cron-cleanup] Iniciando limpieza de sesiones...');
 
     // Llamar a la función RPC de Supabase para limpiar sesiones expiradas
-    const { data, error } = await supabaseAdmin.rpc('cleanup_expired_whatsapp_sessions');
+    const { data, error: rpcError } = await supabaseAdmin.rpc('cleanup_expired_whatsapp_sessions');
 
-    if (error) {
-      console.error('[cron-cleanup] Error ejecutando RPC:', error);
+    if (rpcError) {
+      console.error('[cron-cleanup] Error ejecutando RPC:', rpcError);
       return NextResponse.json(
         {
           success: false,
-          error: error.message,
+          error: rpcError.message,
           timestamp: new Date().toISOString(),
         },
         { status: 500 }

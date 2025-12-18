@@ -97,7 +97,7 @@ export async function POST(request) {
       );
     }
 
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'TEC_Rural_Bot';
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'TecRuralDiagBot';
 
     console.log(`[telegram-link] Token generado para usuario ${user.id}: ${token}`);
 

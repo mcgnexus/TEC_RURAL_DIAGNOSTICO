@@ -448,7 +448,7 @@ export default function ConfiguracionPage() {
               </button>
             </div>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-muted)' }}>
-              Abre Telegram y ve a <strong>@TEC_Rural_Bot</strong>, luego envía: <code>/link {generatedToken}</code>
+              Abre Telegram y ve a <strong>@TecRuralDiagBot</strong>, luego envía: <code>/link {generatedToken}</code>
             </p>
           </div>
         )}

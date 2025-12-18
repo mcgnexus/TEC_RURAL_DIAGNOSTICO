@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { runDiagnosis } from '@/lib/diagnosisEngine';
 import { sendWhatsAppText, sendWhatsAppImage } from '@/lib/whapi';
+import { sendTelegramMessage, sendTelegramPhoto } from '@/lib/telegram/telegramApi';
 
 export const runtime = 'nodejs';
 
@@ -149,6 +150,63 @@ export async function POST(request) {
         } catch (notifError) {
           // Log pero no fallar el diagnóstico
           console.error('[diagnose] Error en notificación WhatsApp:', notifError);
+        }
+      })();
+    }
+
+    // NOTIFICACIÓN AUTOMÁTICA POR TELEGRAM (no bloqueante)
+    if (diagnosisResult.diagnosis) {
+      // Ejecutar notificación de forma asíncrona sin bloquear la respuesta
+      (async () => {
+        try {
+          // Obtener teléfono y preferencias de notificación del usuario
+          const { data: profile } = await supabaseAuth
+            .from('profiles')
+            .select('telegram_id, notify_telegram_on_diagnosis')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          const diagnosis = diagnosisResult.diagnosis;
+
+          // Solo enviar notificación automática si el diagnóstico se creó en esta misma solicitud
+          // (es decir, es muy reciente, no más de 10 segundos)
+          const NOTIFICATION_FRESHNESS = 10 * 1000; // 10 segundos en ms
+          const timeSinceDiagnosis = Date.now() - new Date(diagnosis.created_at).getTime();
+
+          if (profile?.telegram_id && profile?.notify_telegram_on_diagnosis !== false && timeSinceDiagnosis < NOTIFICATION_FRESHNESS) {
+            const confidence = diagnosis.confidence_score
+              ? Math.round(diagnosis.confidence_score * 100)
+              : 0;
+
+            const notificationText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
+
+            // Enviar notificación de texto
+            await sendTelegramMessage({
+              chat_id: profile.telegram_id,
+              text: notificationText,
+              parse_mode: 'Markdown',
+            });
+
+            // Opcionalmente enviar imagen
+            if (diagnosis.image_url) {
+              await sendTelegramPhoto({
+                chat_id: profile.telegram_id,
+                photo: diagnosis.image_url,
+                caption: `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
+              });
+            }
+
+            console.log('[diagnose] Notificación Telegram enviada a:', profile.telegram_id, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);
+          } else if (profile?.telegram_id && profile?.notify_telegram_on_diagnosis === false) {
+            console.log('[diagnose] Notificación Telegram omitida: usuario deshabilitó notificaciones');
+          } else if (timeSinceDiagnosis >= NOTIFICATION_FRESHNESS) {
+            console.log('[diagnose] Notificación Telegram omitida: diagnóstico antiguo (más de 10s)');
+          } else {
+            console.log('[diagnose] No se envió notificación Telegram: usuario sin Telegram vinculado');
+          }
+        } catch (notifError) {
+          // Log pero no fallar el diagnóstico
+          console.error('[diagnose] Error en notificación Telegram:', notifError);
         }
       })();
     }

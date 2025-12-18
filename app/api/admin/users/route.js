@@ -1,6 +1,22 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+/**
+ * Normaliza un número de teléfono al formato internacional E.164
+ * @param {string} phone - Número de teléfono (con o sin +)
+ * @returns {string|null} Teléfono normalizado (ej: "+573001234567") o null si es inválido
+ */
+function normalizePhone(phone) {
+  if (!phone) return null;
+
+  // Extraer solo dígitos
+  const cleaned = String(phone).replace(/[^\d]/g, '');
+  if (!cleaned || cleaned.length < 7) return null; // Validación mínima
+
+  // Siempre devolver con +
+  return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+}
+
 export const runtime = 'nodejs';
 
 const fetchLatestImages = async supabase => {
@@ -62,10 +78,15 @@ export async function PATCH(request) {
     // Filtrar campos permitidos
     const allowedFields = ['first_name', 'last_name', 'phone', 'role', 'credits_remaining', 'location', 'notify_whatsapp_on_diagnosis'];
     const filteredUpdates = {};
-    
+
     Object.keys(updates).forEach(key => {
       if (allowedFields.includes(key)) {
-        filteredUpdates[key] = updates[key];
+        // Normalizar teléfono si se está actualizando
+        if (key === 'phone' && updates[key]) {
+          filteredUpdates[key] = normalizePhone(updates[key]);
+        } else {
+          filteredUpdates[key] = updates[key];
+        }
       }
     });
 

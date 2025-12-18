@@ -110,10 +110,13 @@ export async function POST(request) {
           // 3. El diagnóstico no fue notificado recientemente (prevenir duplicados)
 
           const diagnosis = diagnosisResult.diagnosis;
-          const NOTIFICATION_COOLDOWN = 5 * 60 * 1000; // 5 minutos en ms
+
+          // Solo enviar notificación automática si el diagnóstico se creó en esta misma solicitud
+          // (es decir, es muy reciente, no más de 10 segundos)
+          const NOTIFICATION_FRESHNESS = 10 * 1000; // 10 segundos en ms
           const timeSinceDiagnosis = Date.now() - new Date(diagnosis.created_at).getTime();
 
-          if (profile?.phone && profile?.notify_whatsapp_on_diagnosis !== false && timeSinceDiagnosis < NOTIFICATION_COOLDOWN) {
+          if (profile?.phone && profile?.notify_whatsapp_on_diagnosis !== false && timeSinceDiagnosis < NOTIFICATION_FRESHNESS) {
             const confidence = diagnosis.confidence_score
               ? Math.round(diagnosis.confidence_score * 100)
               : 0;
@@ -138,8 +141,8 @@ export async function POST(request) {
             console.log('[diagnose] Notificación WhatsApp enviada a:', profile.phone, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);
           } else if (profile?.phone && profile?.notify_whatsapp_on_diagnosis === false) {
             console.log('[diagnose] Notificación WhatsApp omitida: usuario deshabilitó notificaciones');
-          } else if (timeSinceDiagnosis >= NOTIFICATION_COOLDOWN) {
-            console.log('[diagnose] Notificación WhatsApp omitida: diagnóstico antiguo (más de 5 min)');
+          } else if (timeSinceDiagnosis >= NOTIFICATION_FRESHNESS) {
+            console.log('[diagnose] Notificación WhatsApp omitida: diagnóstico antiguo (más de 10s)');
           } else {
             console.log('[diagnose] No se envió notificación WhatsApp: usuario sin teléfono registrado');
           }

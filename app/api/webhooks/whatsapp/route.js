@@ -347,7 +347,7 @@ async function handleConversationalFlow(message, phone, userId, profile) {
       break;
 
     case 'awaiting_notes':
-      await handleNotesInput(message, phone);
+      await handleNotesInput(message, phone, userId, profile);
       break;
 
     case 'awaiting_image':
@@ -401,7 +401,7 @@ async function handleCultivoInput(message, phone) {
 /**
  * Procesa la entrada de notas/síntomas
  */
-async function handleNotesInput(message, phone) {
+async function handleNotesInput(message, phone, userId, profile) {
   let notes = '';
 
   // Aceptar texto o permitir imagen directa
@@ -424,9 +424,12 @@ async function handleNotesInput(message, phone) {
   } else if (message.type === 'image') {
     // Usuario envió imagen directamente, procesar sin notas
     console.log('[whatsapp-webhook] Usuario envió imagen directamente, omitiendo notas');
+
+    // Actualizar sesión para guardar notas vacías, luego procesar imagen inmediatamente
     await updateSessionState(phone, 'awaiting_image', { notes: '' });
-    // Nota: En este punto no tenemos userId ni profile, necesitamos obtenerlos
-    return;
+
+    // Procesar la imagen sin esperar otra entrada
+    await handleImageInput(message, phone, userId, profile);
   } else {
     await sendWhatsAppText({
       to: phone,

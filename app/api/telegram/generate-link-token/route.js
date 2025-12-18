@@ -82,7 +82,7 @@ export async function POST(request) {
       .insert({
         token,
         user_id: user.id,
-        telegram_id: null, // Se rellena cuando el bot lo valida
+        telegram_id: '', // Se rellena cuando el bot lo valida (compatible con NOT NULL en migraciones antiguas)
         expires_at: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
         used: false,
       })

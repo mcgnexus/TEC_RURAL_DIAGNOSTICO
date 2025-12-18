@@ -6,13 +6,17 @@
 
 CREATE TABLE IF NOT EXISTS public.telegram_link_tokens (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  telegram_id TEXT NOT NULL,
+  telegram_id TEXT,
   token TEXT UNIQUE NOT NULL,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   expires_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '15 minutes',
   used BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Permitir que telegram_id sea NULL (cuando el token se genera desde la web)
+ALTER TABLE public.telegram_link_tokens
+  ALTER COLUMN telegram_id DROP NOT NULL;
 
 -- Índices para búsquedas rápidas
 CREATE INDEX IF NOT EXISTS telegram_link_tokens_token_idx
@@ -26,6 +30,9 @@ CREATE INDEX IF NOT EXISTS telegram_link_tokens_expires_at_idx
 
 -- Política de seguridad RLS
 ALTER TABLE public.telegram_link_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow service role full access to telegram_link_tokens"
+  ON public.telegram_link_tokens;
 
 CREATE POLICY "Allow service role full access to telegram_link_tokens"
   ON public.telegram_link_tokens

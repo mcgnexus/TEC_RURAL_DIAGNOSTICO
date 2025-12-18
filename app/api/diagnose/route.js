@@ -181,19 +181,15 @@ export async function POST(request) {
             const notificationText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
 
             // Enviar notificación de texto
-            await sendTelegramMessage({
-              chat_id: profile.telegram_id,
-              text: notificationText,
-              parse_mode: 'Markdown',
-            });
+            await sendTelegramMessage(profile.telegram_id, notificationText);
 
             // Opcionalmente enviar imagen
             if (diagnosis.image_url) {
-              await sendTelegramPhoto({
-                chat_id: profile.telegram_id,
-                photo: diagnosis.image_url,
-                caption: `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
-              });
+              await sendTelegramPhoto(
+                profile.telegram_id,
+                diagnosis.image_url,
+                `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`
+              );
             }
 
             console.log('[diagnose] Notificación Telegram enviada a:', profile.telegram_id, `(diagnóstico creado hace ${Math.round(timeSinceDiagnosis / 1000)}s)`);

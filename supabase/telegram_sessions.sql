@@ -32,6 +32,9 @@ CREATE INDEX IF NOT EXISTS telegram_sessions_expires_at_idx
 -- Política de seguridad RLS
 ALTER TABLE public.telegram_sessions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow service role full access to telegram_sessions"
+  ON public.telegram_sessions;
+
 CREATE POLICY "Allow service role full access to telegram_sessions"
   ON public.telegram_sessions
   FOR ALL

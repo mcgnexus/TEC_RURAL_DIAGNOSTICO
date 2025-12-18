@@ -22,31 +22,52 @@ import { runDiagnosis } from '@/lib/diagnosisEngine';
 
 export const runtime = 'nodejs';
 
+function extractWhapiMessages(body) {
+  if (!body) return [];
+  if (Array.isArray(body.messages)) return body.messages;
+  if (body.messages && typeof body.messages === 'object') return [body.messages];
+  if (body.message && typeof body.message === 'object') return [body.message];
+  if (Array.isArray(body.data?.messages)) return body.data.messages;
+  return [];
+}
+
+function isFromMe(message) {
+  const value = message?.from_me ?? message?.fromMe;
+  return value === true || value === 1 || value === 'true';
+}
+
+function getWhatsAppDedupId(messageId) {
+  if (!messageId) return null;
+  return `whatsapp:${String(messageId)}`;
+}
+
 /**
  * Marca un mensaje como procesado para evitar duplicados
  */
 async function markMessageAsProcessed(messageId, phone) {
-  if (!messageId) return;
+  const dedupId = getWhatsAppDedupId(messageId);
+  if (!dedupId) return;
 
   try {
-    await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('processed_webhook_messages')
       .insert({
-        message_id: messageId,
+        message_id: dedupId,
         phone: phone || 'unknown',
         processed_at: new Date().toISOString(),
-      })
-      .then(() => {
-        console.log(`[whatsapp-webhook] Mensaje ${messageId} marcado como procesado`);
-      })
-      .catch((err) => {
-        // Ignorar si ya existe (unique constraint)
-        if (err.code === '23505') {
-          console.log(`[whatsapp-webhook] Mensaje ${messageId} ya estaba marcado como procesado`);
-        } else {
-          console.error(`[whatsapp-webhook] Error marcando mensaje como procesado:`, err);
-        }
       });
+
+    if (!error) {
+      console.log(`[whatsapp-webhook] Mensaje ${dedupId} marcado como procesado`);
+      return;
+    }
+
+    if (error.code === '23505') {
+      console.log(`[whatsapp-webhook] Mensaje ${dedupId} ya estaba marcado como procesado`);
+      return;
+    }
+
+    console.error('[whatsapp-webhook] Error marcando mensaje como procesado:', error);
   } catch (error) {
     console.error('[whatsapp-webhook] Error en markMessageAsProcessed:', error);
   }
@@ -62,16 +83,18 @@ export async function POST(request) {
     console.log('[whatsapp-webhook] ✅ WEBHOOK RECIBIDO');
     console.log('[whatsapp-webhook] Body:', JSON.stringify(body, null, 2));
 
+    const messages = extractWhapiMessages(body);
+
     // Validar estructura del webhook
-    if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
+    if (!messages.length) {
       console.log('[whatsapp-webhook] ⚠️ Sin mensajes en el webhook (puede ser una notificación de estado)');
       return NextResponse.json({ success: true, message: 'No messages to process' }, { status: 200 });
     }
 
-    console.log(`[whatsapp-webhook] 📩 Total mensajes recibidos: ${body.messages.length}`);
+    console.log(`[whatsapp-webhook] 📩 Total mensajes recibidos: ${messages.length}`);
 
     // Procesar solo mensajes entrantes (from_me: false)
-    const incomingMessages = body.messages.filter(msg => !msg.from_me);
+    const incomingMessages = messages.filter(msg => !isFromMe(msg));
 
     console.log(`[whatsapp-webhook] 📥 Mensajes entrantes: ${incomingMessages.length}`);
 
@@ -120,8 +143,15 @@ export async function GET() {
  * Procesa un mensaje entrante individual
  */
 async function processIncomingMessage(message) {
-  const { chat_id, type, id: messageId } = message;
+  const chat_id =
+    message?.chat_id ||
+    message?.chatId ||
+    message?.from ||
+    message?.sender?.id ||
+    '';
+  const { type, id: messageId } = message;
   const phone = normalizePhoneFromChatId(chat_id);
+  const dedupId = getWhatsAppDedupId(messageId);
 
   try {
     if (!phone) {
@@ -130,16 +160,19 @@ async function processIncomingMessage(message) {
     }
 
     // DEDUPLICACIÓN: Verificar si el mensaje ya fue procesado
-    if (messageId) {
-      const { data: existing } = await supabaseAdmin
+    if (dedupId) {
+      const { data: existing, error } = await supabaseAdmin
         .from('processed_webhook_messages')
         .select('id')
-        .eq('message_id', messageId)
-        .maybeSingle()
-        .catch(() => ({ data: null }));
+        .eq('message_id', dedupId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[whatsapp-webhook] Error verificando deduplicación:', error);
+      }
 
       if (existing) {
-        console.log(`[whatsapp-webhook] Mensaje ${messageId} ya fue procesado, omitiendo...`);
+        console.log(`[whatsapp-webhook] Mensaje ${dedupId} ya fue procesado, omitiendo...`);
         return;
       }
     }
@@ -147,10 +180,15 @@ async function processIncomingMessage(message) {
     console.log(`[whatsapp-webhook] Procesando mensaje de ${phone}, tipo: ${type}`);
 
     // 1. AUTENTICACIÓN: Verificar si el usuario está registrado
+    const phoneDigits = String(phone).replace(/[^\d]/g, '');
+    const phoneCandidates = Array.from(
+      new Set([phone, phoneDigits ? `+${phoneDigits}` : null, phoneDigits].filter(Boolean))
+    );
+
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id, phone, credits_remaining')
-      .eq('phone', phone)
+      .in('phone', phoneCandidates)
       .maybeSingle();
 
     if (profileError) {

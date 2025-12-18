@@ -25,28 +25,126 @@ export const runtime = 'nodejs';
 
 const TELEGRAM_SOURCE = 'telegram';
 
+function getTelegramDedupId(updateId) {
+  if (!updateId && updateId !== 0) return null;
+  return `telegram:${String(updateId)}`;
+}
+
+function extractLinkToken(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/(start|link)(?:@\w+)?\s+([A-Za-z0-9]{4,32})/i);
+  return match ? match[2] : null;
+}
+
+async function linkTelegramAccountWithToken({ token, telegramId, telegramUsername }) {
+  const normalizedToken = String(token || '').trim().toUpperCase();
+  if (!normalizedToken) {
+    return { success: false, error: 'Token inválido.' };
+  }
+
+  const now = new Date();
+
+  const { data: linkToken, error: tokenError } = await supabaseAdmin
+    .from('telegram_link_tokens')
+    .select('id, user_id, expires_at, used')
+    .eq('token', normalizedToken)
+    .maybeSingle();
+
+  if (tokenError) {
+    console.error('[telegram-webhook] Error consultando token de vinculación:', tokenError);
+    return { success: false, error: 'No se pudo validar el token. Contacta al administrador.' };
+  }
+
+  if (!linkToken) {
+    return { success: false, error: 'Token inválido o no encontrado. Genera uno nuevo desde la web.' };
+  }
+
+  if (linkToken.used) {
+    return { success: false, error: 'Este token ya fue usado. Genera uno nuevo desde la web.' };
+  }
+
+  const expiresAt = linkToken.expires_at ? new Date(linkToken.expires_at) : null;
+  if (expiresAt && expiresAt <= now) {
+    return { success: false, error: 'Token expirado. Genera uno nuevo desde la web.' };
+  }
+
+  if (!linkToken.user_id) {
+    return { success: false, error: 'Token inválido (sin usuario asociado). Genera uno nuevo desde la web.' };
+  }
+
+  const normalizedTelegramId = String(telegramId);
+
+  const { data: alreadyLinkedProfile, error: alreadyLinkedError } = await supabaseAdmin
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', normalizedTelegramId)
+    .maybeSingle();
+
+  if (alreadyLinkedError) {
+    console.error('[telegram-webhook] Error verificando telegram_id existente:', alreadyLinkedError);
+  }
+
+  if (alreadyLinkedProfile && alreadyLinkedProfile.id !== linkToken.user_id) {
+    return {
+      success: false,
+      error:
+        'Este Telegram ya está vinculado a otra cuenta. Si necesitas cambiarlo, desvincula desde la web primero.',
+    };
+  }
+
+  const { error: updateProfileError } = await supabaseAdmin
+    .from('profiles')
+    .update({
+      telegram_id: normalizedTelegramId,
+      telegram_username: telegramUsername || null,
+    })
+    .eq('id', linkToken.user_id);
+
+  if (updateProfileError) {
+    console.error('[telegram-webhook] Error vinculando cuenta:', updateProfileError);
+    return { success: false, error: 'No se pudo vincular tu cuenta. Contacta al administrador.' };
+  }
+
+  const { error: markUsedError } = await supabaseAdmin
+    .from('telegram_link_tokens')
+    .update({
+      used: true,
+      telegram_id: normalizedTelegramId,
+    })
+    .eq('id', linkToken.id);
+
+  if (markUsedError) {
+    console.error('[telegram-webhook] Error marcando token como usado:', markUsedError);
+  }
+
+  return { success: true, userId: linkToken.user_id };
+}
+
 async function markMessageAsProcessed(updateId, phone, telegramId) {
-  if (!updateId) return;
+  const dedupId = getTelegramDedupId(updateId);
+  if (!dedupId) return;
 
   try {
-    await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('processed_webhook_messages')
       .insert({
-        message_id: String(updateId),
+        message_id: dedupId,
         phone: phone || `telegram:${telegramId}`,
-        source: TELEGRAM_SOURCE,
-        telegram_id: telegramId,
-      })
-      .then(() => {
-        console.log(`[telegram-webhook] Update ${updateId} marcado como procesado`);
-      })
-      .catch((err) => {
-        if (err?.code === '23505') {
-          console.log(`[telegram-webhook] Update ${updateId} ya estaba marcado como procesado`);
-        } else {
-          console.error('[telegram-webhook] Error marcando update como procesado:', err);
-        }
+        processed_at: new Date().toISOString(),
       });
+
+    if (!error) {
+      console.log(`[telegram-webhook] Update ${dedupId} marcado como procesado`);
+      return;
+    }
+
+    if (error?.code === '23505') {
+      console.log(`[telegram-webhook] Update ${dedupId} ya estaba marcado como procesado`);
+      return;
+    }
+
+    console.error('[telegram-webhook] Error marcando update como procesado:', error);
   } catch (error) {
     console.error('[telegram-webhook] Error en markMessageAsProcessed:', error);
   }
@@ -112,6 +210,15 @@ function getQuickDiagnosisPhoto(message) {
 
 export async function POST(request) {
   try {
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const incomingSecret = request.headers.get('x-telegram-bot-api-secret-token');
+      if (incomingSecret !== webhookSecret) {
+        console.warn('[telegram-webhook] Secret token inválido, ignorando request');
+        return NextResponse.json({ success: true }, { status: 200 });
+      }
+    }
+
     const body = await request.json();
     const updateId = body?.update_id;
     const message = body?.message;
@@ -140,6 +247,14 @@ export async function POST(request) {
   }
 }
 
+export async function GET() {
+  return NextResponse.json({
+    status: 'webhook_active',
+    message: 'El webhook de Telegram está activo y esperando updates (POST)',
+    timestamp: new Date().toISOString(),
+  });
+}
+
 async function processIncomingTelegramUpdate(updateId, message) {
   const telegramId = message.from?.id;
   if (!telegramId) {
@@ -148,18 +263,21 @@ async function processIncomingTelegramUpdate(updateId, message) {
   }
 
   const normalizedTelegramId = String(telegramId);
+  const dedupId = getTelegramDedupId(updateId);
   let profile = null;
   let profilePhone = `telegram:${normalizedTelegramId}`;
   let shouldMarkProcessed = true;
 
   try {
-    const { data: existing } = await supabaseAdmin
+    const { data: existing, error: dedupError } = await supabaseAdmin
       .from('processed_webhook_messages')
       .select('id')
-      .eq('message_id', String(updateId))
-      .eq('source', TELEGRAM_SOURCE)
-      .maybeSingle()
-      .catch(() => ({ data: null }));
+      .eq('message_id', dedupId)
+      .maybeSingle();
+
+    if (dedupError) {
+      console.error('[telegram-webhook] Error verificando deduplicación:', dedupError);
+    }
 
     if (existing) {
       console.log(`[telegram-webhook] Update ${updateId} ya fue procesado, omitiendo...`);
@@ -170,16 +288,38 @@ async function processIncomingTelegramUpdate(updateId, message) {
     profile = await findUserByTelegramId(normalizedTelegramId);
     profilePhone = profile?.phone || profilePhone;
 
-    if (!profile) {
-      console.log(`[telegram-webhook] Usuario no registrado: telegramId=${normalizedTelegramId}`);
+    const text = extractMessageText(message);
+    const tokenToLink = extractLinkToken(text);
+    const telegramUsername = message.from?.username || null;
+
+    if (tokenToLink) {
+      const linkResult = await linkTelegramAccountWithToken({
+        token: tokenToLink,
+        telegramId: normalizedTelegramId,
+        telegramUsername,
+      });
+
+      if (!linkResult.success) {
+        await sendTelegramMessage(normalizedTelegramId, linkResult.error || 'No se pudo vincular tu cuenta.');
+        return;
+      }
+
+      profile = await findUserByTelegramId(normalizedTelegramId);
+      profilePhone = profile?.phone || profilePhone;
+
       await sendTelegramMessage(
         normalizedTelegramId,
-        'Tu cuenta de Telegram no está vinculada a TEC Rural Diagnóstico.\n\nVisita la aplicación web y vincula tu cuenta para usar el bot: https://tec-rural-diagnostico.vercel.app'
+        '✅ Cuenta vinculada correctamente.\n\nEscribe /start para ver el menú o /nuevo para crear un diagnóstico.'
       );
+      await showStartMenu(normalizedTelegramId, true);
       return;
     }
 
-    const text = message.text?.trim() || '';
+    if (!profile) {
+      console.log(`[telegram-webhook] Usuario no registrado: telegramId=${normalizedTelegramId}`);
+      await showStartMenu(normalizedTelegramId, false);
+      return;
+    }
 
     if (text) {
       const command = detectCommand(text);
@@ -535,10 +675,26 @@ async function processCallbackQuery(updateId, callbackQuery) {
     const profile = await findUserByTelegramId(telegramId);
 
     if (!profile) {
-      await sendTelegramMessage(
-        telegramId,
-        'Tu cuenta de Telegram no está vinculada. Visita https://tec-rural-diagnostico.vercel.app para vincular.'
-      );
+      if (callbackData === 'ayuda') {
+        await sendTelegramMessage(telegramId, await handleAyudaCommand());
+      } else if (callbackData === 'link_account') {
+        await sendTelegramMessage(
+          telegramId,
+          'Para vincular tu cuenta:\n\n1) Entra a https://tec-rural-diagnostico.vercel.app\n2) Dashboard → Configuración → Telegram\n3) Genera un token\n4) Envíame: /link TOKEN'
+        );
+      } else if (callbackData === 'register_new') {
+        await sendTelegramMessage(
+          telegramId,
+          'Para registrarte:\n\n1) Entra a https://tec-rural-diagnostico.vercel.app\n2) Crea una cuenta\n3) Luego vuelve aquí y vincúlala con un token (/link TOKEN).'
+        );
+      } else {
+        await sendTelegramMessage(
+          telegramId,
+          'Tu cuenta de Telegram no está vinculada. Visita https://tec-rural-diagnostico.vercel.app para vincular.'
+        );
+      }
+
+      await markMessageAsProcessed(updateId, null, telegramId);
       return;
     }
 

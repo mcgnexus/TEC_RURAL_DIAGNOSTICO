@@ -55,7 +55,22 @@ TELEGRAM_BOT_USERNAME="TecRuralDiagBot"
 
 ---
 
-### Paso 3: Reiniciar la Aplicación
+### Paso 3: Configurar Webhook de Telegram (OBLIGATORIO)
+
+Telegram solo enviará mensajes a tu bot si el webhook está configurado apuntando a tu deployment.
+
+1. Asegura que `NEXT_PUBLIC_API_BASE_URL` apunte a tu dominio (ej: `https://tec-rural-diagnostico.vercel.app`)
+2. Ejecuta:
+
+```bash
+node scripts/setup-telegram-webhook.js
+```
+
+Opcional (recomendado): configura `TELEGRAM_WEBHOOK_SECRET` en Vercel y vuelve a ejecutar el script para asegurar el webhook.
+
+---
+
+### Paso 4: Reiniciar la Aplicación
 
 ```bash
 # Detener la app actual (Ctrl+C si está corriendo)
@@ -70,7 +85,7 @@ Espera a que compile completamente:
 
 ---
 
-### Paso 4: Probar el Bot Telegram
+### Paso 5: Probar el Bot Telegram
 
 1. Abre Telegram
 2. Busca `@TecRuralDiagBot`
@@ -85,7 +100,7 @@ Espera a que compile completamente:
 
 ---
 
-### Paso 5: Vincular tu Cuenta
+### Paso 6: Vincular tu Cuenta
 
 #### Desde la Aplicación Web:
 

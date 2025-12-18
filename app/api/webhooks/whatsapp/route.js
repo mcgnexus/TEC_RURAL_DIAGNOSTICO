@@ -123,20 +123,24 @@ export async function POST(request) {
  * GET /api/webhooks/whatsapp
  */
 export async function GET() {
+  const checks = {
+    WHAPI_TOKEN: !!process.env.WHAPI_TOKEN,
+    WHAPI_API_URL: !!process.env.WHAPI_API_URL,
+    SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    SUPABASE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+  };
+
+  const allConfigured = Object.values(checks).every(Boolean);
+
   return NextResponse.json({
-    status: 'webhook_active',
-    message: 'El webhook de WhatsApp está activo y funcionando',
-    expected_post_format: {
-      messages: [
-        {
-          from_me: false,
-          text: { body: 'mensaje' },
-          type: 'text'
-        }
-      ]
-    },
+    status: allConfigured ? 'webhook_active' : 'configuration_error',
+    message: allConfigured 
+      ? 'El webhook de WhatsApp está activo y funcionando' 
+      : 'Faltan variables de entorno críticas',
+    checks,
     timestamp: new Date().toISOString()
-  });
+  }, { status: allConfigured ? 200 : 500 });
 }
 
 /**

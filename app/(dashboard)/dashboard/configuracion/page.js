@@ -197,6 +197,43 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const handleSavePhone = async () => {
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('No autorizado');
+        return;
+      }
+
+      // Validar formato simple
+      const cleaned = phoneInput.replace(/[^\d+]/g, '');
+      if (cleaned.length < 7) {
+        throw new Error('El número es demasiado corto');
+      }
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ phone: cleaned })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      await refreshProfile(); // Recargar perfil
+      setIsEditingPhone(false);
+      setMessage('✅ Teléfono actualizado correctamente');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      console.error('Error guardando teléfono:', err);
+      setError(err.message || 'Error al guardar teléfono');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return <p style={{ color: 'var(--color-muted)' }}>Cargando configuración...</p>;
   }

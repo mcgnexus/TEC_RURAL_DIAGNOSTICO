@@ -24,7 +24,7 @@ export function UserProvider({ children }) {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, role, credits_remaining, first_name, last_name')
+        .select('id, email, role, credits_remaining, first_name, last_name, phone')
         .eq('id', currentUser.id)
         .single();
 

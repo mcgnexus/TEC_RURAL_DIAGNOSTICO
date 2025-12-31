@@ -32,12 +32,16 @@ npm install @supabase/supabase-js @supabase/ssr pdf-parse mammoth
 - [ ] `NEXT_PUBLIC_SUPABASE_URL` está configurada
 - [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` está configurada
 - [ ] `MISTRAL_API_KEY` está configurada (obtener de https://console.mistral.ai/)
+- [ ] `GEMINI_API_KEY` esta configurada (si usas diagnostico)
+- [ ] `GEMINI_MODEL` esta configurado (default: gemini-3-flash-preview)
 
 **Verificar:**
 ```bash
 # En tu código, agregar temporalmente:
 console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
 console.log('Mistral Key:', process.env.MISTRAL_API_KEY ? 'Configurada ✓' : 'NO configurada ✗');
+console.log('Gemini Key:', process.env.GEMINI_API_KEY ? 'Configurada ƒo"' : 'NO configurada ƒo-');
+console.log('Gemini Model:', process.env.GEMINI_MODEL || 'gemini-3-flash-preview');
 ```
 
 ---

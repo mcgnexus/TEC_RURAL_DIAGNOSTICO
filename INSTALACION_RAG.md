@@ -32,12 +32,16 @@ Abre el archivo `.env.local` y reemplaza:
 
 ```env
 MISTRAL_API_KEY=tu_api_key_aqui
+GEMINI_API_KEY=tu_gemini_api_key
+GEMINI_MODEL=gemini-3-flash-preview
 ```
 
 Con tu API key real:
 
 ```env
 MISTRAL_API_KEY=abc123xyz789...
+GEMINI_API_KEY=abc123gemini...
+GEMINI_MODEL=gemini-3-flash-preview
 ```
 
 ---
@@ -93,6 +97,12 @@ npm install pdf-parse
 
 **Solución:**
 1. Verifica que agregaste la key en `.env.local`
+2. Reinicia el servidor (`Ctrl+C` y luego `npm run dev`)
+
+### Error: "Gemini API error: 404"
+
+**Solucion:**
+1. Verifica `GEMINI_MODEL` en `.env.local`
 2. Reinicia el servidor (`Ctrl+C` y luego `npm run dev`)
 
 ### Error: "función match_knowledge no existe"

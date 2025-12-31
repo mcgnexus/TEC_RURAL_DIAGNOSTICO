@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGeminiKey, callGeminiApi } from '@/lib/gemini';
+import { getGeminiKey, callGeminiApi, getGeminiModel } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 
@@ -45,7 +45,7 @@ export async function GET() {
     const resp = {
       ok: true,
       provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      model: getGeminiModel(),
       elapsedMs,
       sampleText,
     };
@@ -53,6 +53,7 @@ export async function GET() {
     if (debugEnabled) {
       resp.debug = {
         endpoint: 'v1beta',
+        model: getGeminiModel(),
         usedEnvVar: usedMeta?.usedEnvVar || null,
         usedKeyFingerprint: usedMeta?.usedKeyFingerprint || null,
         selectedEnvVar: envGemini ? 'GEMINI_API_KEY' : envGoogle ? 'GOOGLE_API_KEY' : null,

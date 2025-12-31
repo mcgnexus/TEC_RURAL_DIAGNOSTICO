@@ -48,6 +48,7 @@ function getWhatsAppDedupId(messageId) {
  */
 async function markMessageAsProcessed(messageId, phone) {
   const dedupId = getWhatsAppDedupId(messageId);
+
   if (!dedupId) return;
 
   try {
@@ -104,11 +105,23 @@ export async function POST(request) {
 
     console.log(`[whatsapp-webhook] 📥 Mensajes entrantes: ${incomingMessages.length}`);
 
+    let hasFailures = false;
+
     for (const message of incomingMessages) {
-      // Procesar cada mensaje de forma asíncrona pero secuencial
-      await processIncomingMessage(message).catch(err => {
-        console.error('[whatsapp-webhook] ❌ Error procesando mensaje:', redactForLog(err));
-      });
+      // Procesar cada mensaje de forma as?ncrona pero secuencial
+      try {
+        await processIncomingMessage(message);
+      } catch (err) {
+        hasFailures = true;
+        console.error('[whatsapp-webhook] Error procesando mensaje:', redactForLog(err));
+      }
+    }
+
+    if (hasFailures) {
+      return NextResponse.json(
+        { success: false, error: 'Error procesando uno o mas mensajes.' },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
@@ -162,6 +175,8 @@ async function processIncomingMessage(message) {
   const { type, id: messageId } = message;
   const phone = normalizePhoneFromChatId(chat_id);
   const dedupId = getWhatsAppDedupId(messageId);
+  let shouldMarkProcessed = true;
+
 
   try {
     if (!phone) {
@@ -183,6 +198,7 @@ async function processIncomingMessage(message) {
 
       if (existing) {
         console.log(`[whatsapp-webhook] Mensaje ${dedupId} ya fue procesado, omitiendo...`);
+        shouldMarkProcessed = false;
         return;
       }
     }
@@ -241,9 +257,14 @@ async function processIncomingMessage(message) {
 
     // 4. GESTIÓN DE SESIONES CONVERSACIONALES
     await handleConversationalFlow(message, phone, userId, profile);
+  } catch (error) {
+    shouldMarkProcessed = false;
+    throw error;
   } finally {
-    // Siempre marcar el mensaje como procesado al final
-    await markMessageAsProcessed(messageId, phone);
+    if (shouldMarkProcessed) {
+      // Siempre marcar el mensaje como procesado al final
+      await markMessageAsProcessed(messageId, phone);
+    }
   }
 }
 
@@ -618,12 +639,11 @@ async function handleImageInput(message, phone, userId, profile) {
       return;
     }
 
-    // ÉXITO: Enviar diagnóstico
+    // ÉXITO: Enviar diagnóstico completo
     const diagnosis = diagnosisResult.diagnosis;
     const confidence = diagnosis.confidence_score
       ? Math.round(diagnosis.confidence_score * 100)
       : 0;
-
     const resultText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
 
     await sendWhatsAppText({ to: phone, text: resultText });

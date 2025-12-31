@@ -237,6 +237,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_clave_publica
 
 # Mistral AI (NUEVO - debes obtenerlo)
 MISTRAL_API_KEY=tu_api_key_de_mistral
+
+# Gemini (opcional para diagnostico)
+GEMINI_API_KEY=tu_gemini_api_key
+GEMINI_MODEL=gemini-3-flash-preview
 ```
 
 **Obtener API Key de Mistral:**

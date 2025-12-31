@@ -195,6 +195,8 @@ npm install @supabase/supabase-js @supabase/ssr pdf-parse mammoth
 
 # 2. Configurar Mistral API Key en .env.local
 MISTRAL_API_KEY=tu_api_key
+GEMINI_API_KEY=tu_gemini_api_key
+GEMINI_MODEL=gemini-3-flash-preview
 
 # 3. Ejecutar schema en Supabase
 # Copiar contenido de (retirado) supabase/schema.sql (knowledge_base) al SQL Editor

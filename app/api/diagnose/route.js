@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { runDiagnosis } from '@/lib/diagnosisEngine';
 import { sendWhatsAppText, sendWhatsAppImage } from '@/lib/whapi';
-import { sendTelegramMessage, sendTelegramPhoto } from '@/lib/telegram/telegramApi';
+import { sendTelegramMessage, sendTelegramMessageChunks, sendTelegramPhoto } from '@/lib/telegram/telegramApi';
 import { maskId, maskPhone, redactForLog } from '@/lib/logging';
 
 export const runtime = 'nodejs';
@@ -186,14 +186,15 @@ export async function POST(request) {
             const notificationText = `✅ *Diagnóstico completado*\n\n📋 Cultivo: ${diagnosis.cultivo_name}\n🎯 Confianza: ${confidence}%\n\n${diagnosis.ai_diagnosis_md}\n\n💳 Créditos restantes: ${diagnosisResult.remainingCredits}`;
 
             // Enviar notificación de texto
-            await sendTelegramMessage(profile.telegram_id, notificationText);
+            await sendTelegramMessageChunks(profile.telegram_id, notificationText, { parse_mode: null });
 
             // Opcionalmente enviar imagen
             if (diagnosis.image_url) {
               await sendTelegramPhoto(
                 profile.telegram_id,
                 diagnosis.image_url,
-                `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`
+                `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
+                { parse_mode: null }
               );
             }
 

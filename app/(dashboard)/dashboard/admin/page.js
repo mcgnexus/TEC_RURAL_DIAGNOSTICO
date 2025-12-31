@@ -29,6 +29,14 @@ export default function AdminHome() {
           </p>
         </a>
 
+        <a href="/dashboard/admin/rag-search" className="card" style={{ textDecoration: 'none' }}>
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)' }}>RAG</p>
+          <h2 style={{ margin: '6px 0', fontSize: '1.25rem' }}>Busqueda de conocimiento</h2>
+          <p style={{ color: 'var(--color-muted)' }}>
+            Revisa los fragmentos indexados y su similitud con una consulta.
+          </p>
+        </a>
+
         <a href="/dashboard/admin/usuarios" className="card" style={{ textDecoration: 'none' }}>
           <p style={{ fontSize: '0.85rem', color: 'var(--color-muted)' }}>Agricultores</p>
           <h2 style={{ margin: '6px 0', fontSize: '1.25rem' }}>Gestion de usuarios</h2>

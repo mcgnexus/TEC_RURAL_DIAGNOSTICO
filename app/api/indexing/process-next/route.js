@@ -71,9 +71,17 @@ export async function POST(request) {
     const statuses = allowFailed ? ['pending', 'failed'] : ['pending'];
     let doc = null;
 
-    const { data: claimed, error: claimError } = await supabaseAdmin
-      .rpc('claim_next_ingestion_document', { allow_failed: allowFailed })
-      .catch(err => ({ data: null, error: err }));
+    let claimError = null;
+    let claimed = null;
+    try {
+      const rpcResult = await supabaseAdmin.rpc('claim_next_ingestion_document', {
+        allow_failed: allowFailed,
+      });
+      claimed = rpcResult?.data ?? null;
+      claimError = rpcResult?.error ?? null;
+    } catch (err) {
+      claimError = err;
+    }
 
     if (!claimError) {
       doc = Array.isArray(claimed) ? claimed[0] : null;

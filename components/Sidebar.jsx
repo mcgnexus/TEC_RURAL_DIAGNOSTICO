@@ -16,6 +16,7 @@ const navItems = [
 const adminItems = [
   { href: '/dashboard/admin', label: 'Panel Admin' },
   { href: '/dashboard/admin/indexing', label: 'Indexacion (v2)' },
+  { href: '/dashboard/admin/rag-search', label: 'Buscar RAG' },
   { href: '/dashboard/admin/usuarios', label: 'Usuarios' },
 ];
 

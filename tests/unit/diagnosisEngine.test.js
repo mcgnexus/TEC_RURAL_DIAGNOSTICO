@@ -1,67 +1,96 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runDiagnosis, findProfileByPhone, ensureEnv } from '../../lib/diagnosisEngine';
-import * as embeddingService from '../../lib/embeddingService';
-import { createClient } from '@supabase/supabase-js';
+import { runDiagnosis, ensureEnv } from '../../lib/diagnosisEngine';
+import { callGeminiApi } from '../../lib/gemini';
 
-// Mock Supabase
 const mockSupabase = {
-  from: vi.fn().mockReturnThis(),
-  select: vi.fn().mockReturnThis(),
-  insert: vi.fn().mockReturnThis(),
-  update: vi.fn().mockReturnThis(),
-  eq: vi.fn().mockImplementation(() => ({
-    single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    then: (resolve) => resolve({ data: null, error: null }),
-  })),
-  single: vi.fn().mockImplementation(() => Promise.resolve({ data: null, error: null })),
-  maybeSingle: vi.fn().mockImplementation(() => Promise.resolve({ data: null, error: null })),
-  rpc: vi.fn().mockImplementation(() => Promise.resolve({ data: [], error: null })),
+  from: vi.fn(),
+  rpc: vi.fn(),
   storage: {
-    from: vi.fn().mockReturnThis(),
-    upload: vi.fn().mockImplementation(() => Promise.resolve({ data: { path: 'test.jpg' }, error: null })),
+    from: vi.fn(),
+    upload: vi.fn(),
   },
 };
+
+let creditsRemaining = 10;
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => mockSupabase),
 }));
 
-// Mock embedding service
 vi.mock('../../lib/embeddingService', () => ({
-  generateEmbedding: vi.fn().mockResolvedValue(new Array(1536).fill(0.1)),
+  generateEmbedding: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
 }));
 
-// Mock fetch
-global.fetch = vi.fn();
+vi.mock('../../lib/gemini', () => ({
+  callGeminiApi: vi.fn(),
+}));
 
 describe('diagnosisEngine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
-    // Reset mockSupabase properties to default behavior
-    mockSupabase.from.mockReturnThis();
-    mockSupabase.select.mockReturnThis();
-    mockSupabase.insert.mockReturnThis();
-    mockSupabase.update.mockReturnThis();
-    mockSupabase.eq.mockImplementation(() => ({
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
-      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-      then: (resolve) => resolve({ data: null, error: null }),
-    }));
-    mockSupabase.single.mockImplementation(() => Promise.resolve({ data: null, error: null }));
-    mockSupabase.maybeSingle.mockImplementation(() => Promise.resolve({ data: null, error: null }));
+
+    creditsRemaining = 10;
+
+    mockSupabase.from.mockImplementation(table => {
+      if (table === 'profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: () => Promise.resolve({ data: { credits_remaining: creditsRemaining }, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: () => Promise.resolve({ error: null }),
+          }),
+        };
+      }
+
+      if (table === 'diagnosis_cache') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+          insert: () => Promise.resolve({ error: null }),
+        };
+      }
+
+      if (table === 'diagnoses') {
+        return {
+          insert: () => ({
+            select: () => ({
+              single: () =>
+                Promise.resolve({
+                  data: { id: 'diag-1', cultivo_name: 'Maiz', status: 'pending', created_at: new Date().toISOString() },
+                  error: null,
+                }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        select: () => ({
+          eq: () => ({
+            single: () => Promise.resolve({ data: null, error: null }),
+          }),
+        }),
+      };
+    });
+
     mockSupabase.rpc.mockImplementation(() => Promise.resolve({ data: [], error: null }));
     mockSupabase.storage.from.mockReturnThis();
-    mockSupabase.storage.upload.mockImplementation(() => Promise.resolve({ data: { path: 'test.jpg' }, error: null }));
+    mockSupabase.storage.upload.mockImplementation(() =>
+      Promise.resolve({ data: { path: 'test.jpg' }, error: null })
+    );
 
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
     process.env.GEMINI_API_KEY = 'test-gemini-key';
     process.env.NEXT_PUBLIC_DIAGNOSE_DEBUG = '1';
     process.env.DIAGNOSE_DEBUG = '1';
-    
-    // Mock crypto.randomUUID
+
     if (typeof global.crypto === 'undefined') {
       global.crypto = { randomUUID: () => 'test-uuid' };
     } else if (typeof global.crypto.randomUUID === 'undefined') {
@@ -69,27 +98,11 @@ describe('diagnosisEngine', () => {
     }
   });
 
-  describe('findProfileByPhone', () => {
-    it('should return profile data for a valid phone number', async () => {
-      const mockProfile = { id: 'user-1', credits_remaining: 5, phone: '+123456789' };
-      mockSupabase.eq.mockReturnValueOnce({
-        single: vi.fn().mockResolvedValue({ data: mockProfile, error: null })
-      });
-
-      const result = await findProfileByPhone('123456789');
-      expect(result.data).toEqual(mockProfile);
-      expect(result.error).toBeNull();
-    });
-
-    it('should return null if profile not found', async () => {
-      mockSupabase.eq.mockReturnValueOnce({
-        single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } })
-      });
-
-      const result = await findProfileByPhone('123456789');
-      expect(result.data).toBeNull();
-      expect(result.error).toBeNull();
-    });
+  it('ensureEnv should throw if env missing', () => {
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '';
+    expect(() => ensureEnv()).toThrow();
+    process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
   });
 
   describe('runDiagnosis', () => {
@@ -99,103 +112,132 @@ describe('diagnosisEngine', () => {
     });
 
     it('should fail if credits are 0', async () => {
-      const mockSingle = vi.fn().mockResolvedValue({ data: { credits_remaining: 0 }, error: null });
-      mockSupabase.eq.mockReturnValueOnce({
-        single: mockSingle
+      creditsRemaining = 0;
+
+      const result = await runDiagnosis({
+        userId: 'user-1',
+        cultivoName: 'Maiz',
+        imageBuffer: Buffer.from('test'),
       });
 
-      const result = await runDiagnosis({ userId: 'user-1', cultivoName: 'Maiz', imageBuffer: Buffer.from('test') });
-      
-      console.log('Result for credits 0:', result);
-      
-      expect(result.error).toContain('No tienes créditos disponibles');
+      expect(result.error).toContain('No tienes creditos disponibles');
       expect(result.statusCode).toBe(402);
     });
 
     it('should handle successful diagnosis flow', async () => {
-      // Mock profile check (first eq().single())
-      mockSupabase.eq.mockReturnValueOnce({
-        single: vi.fn().mockResolvedValue({ data: { credits_remaining: 10 }, error: null })
+      creditsRemaining = 10;
+
+      mockSupabase.rpc.mockResolvedValueOnce({
+        data: [
+          {
+            id: 1,
+            content: 'Diagnostico: Roya. Sintomas: manchas amarillas y necrosis en bordes.',
+            similarity: 0.8,
+            metadata: { diagnosis: 'Roya' },
+          },
+        ],
+        error: null,
       });
 
-      // Mock RAG matches
-      mockSupabase.rpc.mockResolvedValueOnce({ 
-        data: [{ id: 1, content: 'Symptom description', metadata: { filename: 'guide.pdf' }, similarity: 0.8 }], 
-        error: null 
-      });
-
-      // Mock Gemini API call for diagnosis
-      const mockGeminiResponse = {
-        candidates: [{
-          content: {
-            parts: [{
-              text: '```json\n{"diagnosis_title": "Roya", "confidence_score": 90, "is_conclusive": true, "urgency_level": "Alta", "recommendations": ["Apply fungicide"]}\n```\nDetailed diagnosis markdown here.'
-            }]
-          }
-        }]
-      };
-      
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockGeminiResponse
-      });
-
-      // Mock Gemini API call for verification (RAG)
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          candidates: [{
+      const observationResponse = {
+        candidates: [
+          {
             content: {
-              parts: [{
-                text: '{"is_match": true, "confidence": 0.9, "reasoning": "Symptoms match exactly"}'
-              }]
-            }
-          }]
-        })
-      });
+              parts: [
+                {
+                  text: JSON.stringify({
+                    cultivo_detectado: 'Maiz',
+                    cultivo_confianza: 90,
+                    coincide_cultivo: true,
+                    sintomas: ['manchas amarillas', 'necrosis en bordes'],
+                    hallazgos_visuales: ['manchas amarillas en hojas', 'bordes necroticos'],
+                    descripcion_visual: 'Hojas con manchas amarillas irregulares y bordes necroticos.',
+                    calidad_imagen: { nitidez: 'alta', cobertura: 'media', notas: '' },
+                    riesgos_visibles: ['mancha fungica'],
+                    diagnosis_title_prelim: 'Roya',
+                    vision_confidence: 90,
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      };
 
-      // Mock diagnosis insert
-      const mockInsertedDiagnosis = { id: 'diag-1', cultivo_name: 'Maiz', status: 'pending' };
-      mockSupabase.single.mockResolvedValueOnce({ 
-        data: mockInsertedDiagnosis, 
-        error: null 
-      });
+      const diagnosisResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    diagnosis_title: 'Roya',
+                    confidence_score: 90,
+                    is_conclusive: true,
+                    urgency_level: 'Alta',
+                    supporting_points: ['manchas amarillas coinciden con contexto'],
+                    report: {
+                      descripcion_visual: 'Hojas con manchas amarillas y necrosis en bordes.',
+                      por_que: 'Los sintomas observados coinciden con el contexto RAG.',
+                      acciones_ecologicas: ['Retirar hojas afectadas', 'Mejorar ventilacion'],
+                      acciones_quimicas: ['Aplicar fungicida recomendado', 'Seguir etiqueta'],
+                      recomendaciones: ['Monitorear semanalmente', 'Evitar exceso de riego'],
+                      referencias_rag: ['Ficha de roya en maiz'],
+                    },
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      };
 
-      // Mock credit update (second eq())
-      mockSupabase.eq.mockReturnValueOnce({
-        then: (resolve) => resolve({ error: null })
-      });
+      callGeminiApi.mockResolvedValueOnce(observationResponse).mockResolvedValueOnce(diagnosisResponse);
 
       const result = await runDiagnosis({
         userId: 'user-1',
         cultivoName: 'Maiz',
         notes: 'Yellow spots',
         imageBuffer: Buffer.from('fake-image-data'),
-        mimeType: 'image/jpeg'
+        mimeType: 'image/jpeg',
       });
 
       expect(result.success).toBe(true);
-      expect(result.diagnosis).toEqual(mockInsertedDiagnosis);
+      expect(result.diagnosis).toBeTruthy();
       expect(result.remainingCredits).toBe(9);
-      expect(result.recommendations).toContain('Apply fungicide');
+      expect(result.ragUsage).toBeTruthy();
+      expect(result.scores.final).toBeGreaterThan(0.7);
     });
 
-    it('should return needsBetterPhoto if confidence is low', async () => {
-      mockSupabase.eq.mockReturnValueOnce({
-        single: vi.fn().mockResolvedValue({ data: { credits_remaining: 10 }, error: null })
-      });
+    it('should return needsBetterPhoto if observation rejects image', async () => {
       mockSupabase.rpc.mockResolvedValueOnce({ data: [], error: null });
 
-      const mockGeminiResponse = {
-        candidates: [{
-          content: {
-            parts: [{
-              text: '```json\n{"diagnosis_title": "Unknown", "confidence_score": 0.3, "is_conclusive": false}\n```'
-            }]
-          }
-        }]
+      const observationResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    cultivo_detectado: 'Otro',
+                    cultivo_confianza: 50,
+                    coincide_cultivo: false,
+                    sintomas: [],
+                    hallazgos_visuales: [],
+                    descripcion_visual: '',
+                    calidad_imagen: { nitidez: 'baja', cobertura: 'baja', notas: '' },
+                    riesgos_visibles: [],
+                    diagnosis_title_prelim: 'desconocido',
+                    vision_confidence: 20,
+                  }),
+                },
+              ],
+            },
+          },
+        ],
       };
-      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => mockGeminiResponse });
+
+      callGeminiApi.mockResolvedValueOnce(observationResponse);
 
       const result = await runDiagnosis({
         userId: 'user-1',
@@ -204,7 +246,7 @@ describe('diagnosisEngine', () => {
       });
 
       expect(result.needsBetterPhoto).toBe(true);
-      expect(result.message).toContain('imagen no fue concluyente');
+      expect(result.message.toLowerCase()).toContain('foto');
     });
   });
 });

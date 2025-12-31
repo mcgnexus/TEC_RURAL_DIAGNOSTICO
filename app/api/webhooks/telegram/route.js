@@ -17,6 +17,7 @@ import {
 } from '@/lib/telegram/telegramCommands';
 import {
   sendTelegramMessage,
+  sendTelegramMessageChunks,
   sendTelegramPhoto,
   downloadTelegramFile,
 } from '@/lib/telegram/telegramApi';
@@ -332,6 +333,9 @@ async function processIncomingTelegramUpdate(updateId, message) {
     }
 
     await handleConversationalFlow(message, normalizedTelegramId, profile.id, profile);
+  } catch (error) {
+    shouldMarkProcessed = false;
+    throw error;
   } finally {
     if (shouldMarkProcessed) {
       await markMessageAsProcessed(updateId, profilePhone, normalizedTelegramId);
@@ -431,13 +435,14 @@ ${diagnosis?.ai_diagnosis_md || 'Diagnóstico no disponible.'}
 
 💳 Créditos restantes: ${diagnosisResult.remainingCredits || 0}`;
 
-    await sendTelegramMessage(telegramId, resultText);
+    await sendTelegramMessageChunks(telegramId, resultText, { parse_mode: null });
 
     if (diagnosis?.image_url) {
       await sendTelegramPhoto(
         telegramId,
         diagnosis.image_url,
-        `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`
+        `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
+        { parse_mode: null }
       );
     }
 
@@ -471,7 +476,7 @@ Escribe /nuevo para iniciar un diagnóstico guiado o /ayuda para ver los comando
       await handleCultivoInput(message, telegramId);
       break;
     case 'awaiting_notes':
-      await handleNotesInput(message, telegramId);
+      await handleNotesInput(message, telegramId, userId, profile);
       break;
     case 'awaiting_image':
       await handleImageInput(message, telegramId, userId, profile);
@@ -514,10 +519,11 @@ Ahora describe los síntomas que observas (opcional). Puedes escribir "omitir" s
   await sendTelegramMessage(telegramId, responseText);
 }
 
-async function handleNotesInput(message, telegramId) {
+async function handleNotesInput(message, telegramId, userId, profile) {
   if (message.photo?.length) {
-    console.log('[telegram-webhook] Usuario envió imagen directamente, omitiendo notas');
+    console.log('[telegram-webhook] Usuario envio imagen directamente, omitiendo notas');
     await updateSessionState(telegramId, 'awaiting_image', { user_notes: '' });
+    await handleImageInput(message, telegramId, userId, profile);
     return;
   }
 
@@ -616,6 +622,7 @@ async function handleImageInput(message, telegramId, userId, profile) {
       ? Math.round(diagnosis.confidence_score * 100)
       : 0;
 
+    // Enviar diagnóstico completo
     const resultText = `✅ *Diagnóstico completado*
 
 🌱 Cultivo: ${diagnosis?.cultivo_name || 'Cultivo'}
@@ -625,13 +632,14 @@ ${diagnosis?.ai_diagnosis_md || 'Diagnóstico no disponible.'}
 
 💳 Créditos restantes: ${diagnosisResult.remainingCredits || 0}`;
 
-    await sendTelegramMessage(telegramId, resultText);
+    await sendTelegramMessageChunks(telegramId, resultText, { parse_mode: null });
 
     if (diagnosis?.image_url) {
       await sendTelegramPhoto(
         telegramId,
         diagnosis.image_url,
-        `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`
+        `Diagnóstico TEC Rural - ${diagnosis.cultivo_name}`,
+        { parse_mode: null }
       );
     }
 

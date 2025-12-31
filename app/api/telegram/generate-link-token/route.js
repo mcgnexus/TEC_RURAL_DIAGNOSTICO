@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
@@ -70,10 +71,7 @@ export async function POST(request) {
     }
 
     // Generar token único de 6 caracteres
-    const token = Math.random()
-      .toString(36)
-      .substring(2, 8)
-      .toUpperCase();
+    const token = crypto.randomBytes(3).toString('hex').toUpperCase();
 
     const expiresInSeconds = 15 * 60; // 15 minutos
 

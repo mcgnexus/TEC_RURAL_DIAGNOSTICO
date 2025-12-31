@@ -38,6 +38,7 @@ Sistema inteligente de diagnóstico agrícola que utiliza RAG (Retrieval-Augment
 | Base de Datos | Supabase (PostgreSQL + pgvector) |
 | Autenticación | Supabase Auth |
 | IA - Embeddings | Mistral AI (mistral-embed) |
+| IA - Diagnostico | Gemini (gemini-3-flash-preview) |
 | Extracción de Texto | pdf-parse, mammoth |
 | Búsqueda Vectorial | pgvector (HNSW) |
 
@@ -100,6 +101,7 @@ TEC_RURAL_DIAGNOSTICO/
 - Node.js v18 o superior
 - Cuenta de [Supabase](https://supabase.com/)
 - Cuenta de [Mistral AI](https://console.mistral.ai/)
+- Cuenta de [Google AI Studio](https://aistudio.google.com/) (Gemini)
 
 ### 1. Clonar el repositorio
 
@@ -125,6 +127,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
 
 # Mistral AI
 MISTRAL_API_KEY=tu_mistral_api_key
+
+# Gemini
+GEMINI_API_KEY=tu_gemini_api_key
+GEMINI_MODEL=gemini-3-flash-preview
 ```
 
 ### 4. Configurar Supabase
@@ -208,6 +214,14 @@ En `lib/embeddingService.js`:
 model: 'mistral-embed',  // Cambiar a otro modelo si lo deseas
 ```
 
+### Configurar el modelo de Gemini
+
+En `.env.local`:
+
+```env
+GEMINI_MODEL=gemini-3-flash-preview
+```
+
 ### Configurar límites de archivo
 
 En `app/api/rag/process/route.js`:
@@ -259,6 +273,10 @@ npm install
 
 ### Error: "MISTRAL_API_KEY no está configurada"
 1. Verifica `.env.local`
+2. Reinicia el servidor
+
+### Error: "Gemini API error: 404"
+1. Verifica `GEMINI_MODEL` en `.env.local`
 2. Reinicia el servidor
 
 ### Error: "función match_knowledge no existe"

@@ -208,8 +208,11 @@ export default function NuevaConsultaPage() {
       } else if (result.needsBetterPhoto) {
         setError(result.message || 'La foto no fue clara, intenta nuevamente.');
       } else {
-        setStatusMessage('Diagnóstico generado correctamente.');
-        router.push('/dashboard/historial');
+        // Success: Redirect to historial
+        setStatusMessage('¡Diagnóstico completado! Redirigiendo al historial...');
+        setTimeout(() => {
+          router.push('/dashboard/historial');
+        }, 2000);
       }
     } catch (err) {
       setError('Ocurrió un problema al enviar la consulta. Intenta más tarde.');

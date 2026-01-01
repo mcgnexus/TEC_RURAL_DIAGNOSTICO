@@ -313,12 +313,32 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
     `[whatsapp-webhook] Diagnóstico rápido - Cultivo: ${redactString(cultivoName)}, Notas: ${notes ? redactString(notes) : 'ninguna'}`
   );
 
-  // Obtener URL de la imagen
-  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file || imageData.id;
+  // Log completo para debugging
+  console.log('[whatsapp-webhook] Estructura completa de imageData:', JSON.stringify(redactForLog(imageData), null, 2));
+
+  // Obtener URL de la imagen - intentar múltiples campos según documentación de Whapi
+  const imageUrl = imageData.link || 
+                  imageData.url || 
+                  imageData.media_url || 
+                  imageData.file || 
+                  imageData.id ||
+                  imageData.download_url ||
+                  imageData.direct_url ||
+                  imageData.content_url;
 
   if (!imageUrl) {
-    console.error('[whatsapp-webhook] No se encontró URL de imagen');
-    await sendWhatsAppError(phone, 'No se pudo obtener la imagen. Intenta nuevamente.');
+    console.error('[whatsapp-webhook] No se encontró URL de imagen. Campos disponibles:', Object.keys(imageData));
+    console.error('[whatsapp-webhook] Valores de campos:', {
+      link: imageData.link,
+      url: imageData.url, 
+      media_url: imageData.media_url,
+      file: imageData.file,
+      id: imageData.id,
+      download_url: imageData.download_url,
+      direct_url: imageData.direct_url,
+      content_url: imageData.content_url
+    });
+    await sendWhatsAppError(phone, 'No se pudo obtener la URL de la imagen. El formato recibido no es compatible. Por favor intenta nuevamente.');
     return;
   }
 
@@ -563,12 +583,32 @@ async function handleImageInput(message, phone, userId, profile) {
 
   console.log('[whatsapp-webhook] imageData:', JSON.stringify(redactForLog(imageData), null, 2));
 
+  // Log completo para debugging
+  console.log('[whatsapp-webhook] Estructura completa de imageData en handleImageInput:', JSON.stringify(redactForLog(imageData), null, 2));
+
   // Intentar diferentes campos donde podría estar la URL
-  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file || imageData.id;
+  const imageUrl = imageData.link || 
+                  imageData.url || 
+                  imageData.media_url || 
+                  imageData.file || 
+                  imageData.id ||
+                  imageData.download_url ||
+                  imageData.direct_url ||
+                  imageData.content_url;
 
   if (!imageUrl) {
     console.error('[whatsapp-webhook] No se encontró URL de imagen. Campos disponibles:', Object.keys(imageData));
-    await sendWhatsAppError(phone, 'No se pudo obtener la URL de la imagen. Intenta nuevamente.');
+    console.error('[whatsapp-webhook] Valores de campos en handleImageInput:', {
+      link: imageData.link,
+      url: imageData.url, 
+      media_url: imageData.media_url,
+      file: imageData.file,
+      id: imageData.id,
+      download_url: imageData.download_url,
+      direct_url: imageData.direct_url,
+      content_url: imageData.content_url
+    });
+    await sendWhatsAppError(phone, 'No se pudo obtener la URL de la imagen. El formato recibido no es compatible. Por favor intenta nuevamente.');
     return;
   }
 

@@ -32,6 +32,7 @@ vi.mock('@/lib/telegram/telegramCommands', () => ({
 
 vi.mock('@/lib/telegram/telegramApi', () => ({
   sendTelegramMessage: vi.fn().mockResolvedValue({ ok: true }),
+  sendTelegramMessageChunks: vi.fn().mockResolvedValue(true),
   sendTelegramPhoto: vi.fn().mockResolvedValue({ ok: true }),
   downloadTelegramFile: vi.fn(),
 }));
@@ -130,15 +131,19 @@ describe('Telegram Webhook Route', () => {
     telegramCommands.detectCommand.mockReturnValue(null); // No specific command, just a photo
     telegramApi.downloadTelegramFile.mockResolvedValue(Buffer.from('fake-image-data'));
     
-    vi.mock('@/lib/diagnosisEngine', () => ({
-      runDiagnosis: vi.fn().mockResolvedValue({
-        success: true,
-        diagnosis: { id: 'diag-1', diagnosis_md: 'Diagnóstico de prueba', image_url: 'http://example.com/image.jpg', cultivo_name: 'Maiz' },
-        remainingCredits: 9,
-        recommendations: ['Recomendación 1'],
-        raw: { confidence: 0.95 },
-      }),
-    }));
+    const diagnosisEngine = await import('@/lib/diagnosisEngine');
+    diagnosisEngine.runDiagnosis.mockResolvedValue({
+      success: true,
+      diagnosis: {
+        id: 'diag-1',
+        diagnosis_md: 'Diagnóstico de prueba',
+        image_url: 'http://example.com/image.jpg',
+        cultivo_name: 'Maiz',
+      },
+      remainingCredits: 9,
+      recommendations: ['Recomendación 1'],
+      raw: { confidence: 0.95 },
+    });
 
     const body = {
       update_id: 3,
@@ -166,15 +171,17 @@ describe('Telegram Webhook Route', () => {
     expect(telegramApi.sendTelegramPhoto).toHaveBeenCalledWith(
       '12345',
       'http://example.com/image.jpg',
-      'Diagnóstico TEC Rural - Maiz'
+      'Diagnóstico TEC Rural - Maiz',
+      { parse_mode: null }
     );
     expect(telegramApi.sendTelegramMessage).toHaveBeenCalledWith(
       '12345',
       '🔄 Analizando tu imagen... Esto puede tardar unos segundos.'
     );
-    expect(telegramApi.sendTelegramMessage).toHaveBeenCalledWith(
+    expect(telegramApi.sendTelegramMessageChunks).toHaveBeenCalledWith(
       '12345',
-      '✅ *Diagnóstico completado*\n\n🌱 Cultivo: Maiz\n📊 Confianza: 0%\n\nDiagnóstico no disponible.\n\n💳 Créditos restantes: 9'
+      '✅ *Diagnóstico completado*\n\n🌱 Cultivo: Maiz\n📊 Confianza: 0%\n\nDiagnóstico no disponible.\n\n💳 Créditos restantes: 9',
+      { parse_mode: null }
     );
   });
 });

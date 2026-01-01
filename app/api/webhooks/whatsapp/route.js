@@ -314,7 +314,7 @@ async function handleQuickDiagnosis(message, phone, userId, profile) {
   );
 
   // Obtener URL de la imagen
-  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
+  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file || imageData.id;
 
   if (!imageUrl) {
     console.error('[whatsapp-webhook] No se encontró URL de imagen');
@@ -564,7 +564,7 @@ async function handleImageInput(message, phone, userId, profile) {
   console.log('[whatsapp-webhook] imageData:', JSON.stringify(redactForLog(imageData), null, 2));
 
   // Intentar diferentes campos donde podría estar la URL
-  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file;
+  const imageUrl = imageData.link || imageData.url || imageData.media_url || imageData.file || imageData.id;
 
   if (!imageUrl) {
     console.error('[whatsapp-webhook] No se encontró URL de imagen. Campos disponibles:', Object.keys(imageData));
